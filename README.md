@@ -1,5 +1,14 @@
 # touch-timeout
 A daemon that manages brightness and dims an official RPi 7" display
+| Event                           | Action                                                   |
+| ------------------------------- | -------------------------------------------------------- |
+| Boot                            | Reads `/etc/touch-timeout.conf`, applies settings        |
+| Touchscreen idle (½ timeout)    | Dims to 10 or `user_brightness/10`, whichever is greater |
+| Touchscreen idle (full timeout) | Turns off (brightness = 0)                               |
+| Touch detected                  | Restores to full brightness                              |
+| Missing config                  | Uses defaults (100 brightness, 300s timeout)             |
+| Systemd stop/restart            | Cleans up file descriptors safely                        |
+| CPU Idle                        | < 0.2%                                                   |
 
 To build and deploy:
 
