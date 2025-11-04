@@ -1,0 +1,18 @@
+[Unit]
+Description=Touchscreen Brightness & Timeout
+After=multi-user.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/touch-timeout
+Restart=on-failure
+RestartSec=5
+Nice=10
+IOSchedulingClass=idle
+ProtectSystem=full
+ProtectHome=yes
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
