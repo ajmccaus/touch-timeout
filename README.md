@@ -1,5 +1,5 @@
 # touch-timeout
-A daemon that manages brightness and dims an official RPi 7" display
+A daemon that manages brightness and dims an official RPi 7" display. Meant to be used on a minimal linux distribution like HifiBerry OS.
 | Event                           | Action                                                   |
 | ------------------------------- | -------------------------------------------------------- |
 | Boot                            | Reads `/etc/touch-timeout.conf`, applies settings        |
