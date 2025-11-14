@@ -22,6 +22,12 @@
  *  - Safe sysfs writes (lseek, cached)
  *  - Graceful shutdown via SIGTERM/SIGINT (systemd compatible)
  *
+  * TODO for v1.2:
+ *  - [ ] Make dim_brightness separately configurable (config key: dim_brightness)
+ *        Current: auto-calculated as user_brightness/10
+ *        Proposed: dim_brightness=20 in config file
+ *  - [ ] Reduce restore_brightness() log level to LOG_DEBUG
+ *
  * Author: Andrew McCausland (optimized & hardened version)
  * License: GPL v3
  */
@@ -123,8 +129,10 @@ static void load_config(const char *path, int *brightness, int *timeout,
                 *timeout = atoi(value);
             else if (strcmp(key, "backlight") == 0)
                 strncpy(backlight, value, bl_sz - 1);
+                backlight[bl_sz - 1] = '\0'; // Null-terminate strncpy (defensive)
             else if (strcmp(key, "device") == 0)
                 strncpy(device, value, dev_sz - 1);
+                device[dev_sz - 1] = '\0'; // Null-terminate strncpy (defensive)
             else if (strcmp(key, "poll_interval") == 0)
                 *poll_interval = atoi(value);
             else if (strcmp(key, "dim_percent") == 0)
