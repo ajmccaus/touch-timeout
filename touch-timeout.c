@@ -3,12 +3,23 @@
  * ----------------
  * A lightweight touchscreen activity monitor for Raspberry Pi 7" displays.
  *
+ * VERSION: 1.1
+ * 
+ * Changes from v1.0:
+ *  - Added brightness caching to prevent redundant writes
+ *  - Reads and validates max_brightness from sysfs
+ *  - Configurable poll_interval and dim_percent in config file
+ *  - Time-based timeout logic (handles missed poll cycles)
+ *  - Enum-based state machine (replaces magic numbers)
+ *  - Removed fsync() (unnecessary for sysfs)
+ *  - Enhanced input validation with logging
+ *
  * Features:
  *  - Automatically dims and turns off the backlight after user-defined inactivity
  *  - Restores brightness instantly on any touchscreen input
  *  - Reads config from /etc/touch-timeout.conf (with command-line overrides)
  *  - Near-zero CPU usage (poll-based event loop)
- *  - Safe sysfs writes (lseek, fsync)
+ *  - Safe sysfs writes (lseek, cached)
  *  - Graceful shutdown via SIGTERM/SIGINT (systemd compatible)
  *
  * Author: Andrew McCausland (optimized & hardened version)
@@ -31,22 +42,32 @@
 
 #define MIN_BRIGHTNESS       15     // Minimum allowed brightness (avoids flicker)
 #define MIN_DIM_BRIGHTNESS   10     // Minimum allowed dim level
-#define POLL_INTERVAL_MS     50     // Polling interval for input events (50ms)
+#define SCREEN_OFF           0      // Brightness value for screen off
 #define CONFIG_PATH          "/etc/touch-timeout.conf"
 
 static volatile int running = 1;    // Used for graceful shutdown on SIGTERM/SIGINT
 
 // --------------------
+// Display state machine
+// --------------------
+enum display_state_enum {
+    STATE_FULL = 0,      // Full brightness
+    STATE_DIMMED = 1,    // Dimmed
+    STATE_OFF = 2        // Screen off
+};
+
+// --------------------
 // Struct for tracking display state
 // --------------------
 struct display_state {
-    int bright_fd;           // File descriptor for /sys/class/backlight/.../brightness
-    int user_brightness;     // User-configured brightness level (1–255)
-    int dim_brightness;      // Calculated dim brightness (≥10)
-    int dim_timeout;         // Seconds before dimming
-    int off_timeout;         // Seconds before turning off
-    time_t last_input;       // Timestamp of last touch event
-    int state;               // 0 = full brightness, 1 = dimmed, 2 = off
+    int bright_fd;                      // File descriptor for /sys/class/backlight/.../brightness
+    int user_brightness;                // User-configured brightness level (MIN_BRIGHTNESS–max_brightness)
+    int dim_brightness;                 // Calculated dim brightness (≥MIN_DIM_BRIGHTNESS)
+    int current_brightness;             // Cached hardware brightness (prevents redundant writes)
+    int dim_timeout;                    // Seconds before dimming
+    int off_timeout;                    // Seconds before turning off
+    time_t last_input;                  // Timestamp of last touch event
+    enum display_state_enum state;      // Current state
 };
 
 // --------------------
@@ -75,15 +96,20 @@ static void trim(char *s) {
 //   off_timeout=300
 //   backlight=rpi_backlight
 //   device=event0
+//   poll_interval=100
+//   dim_percent=50
 // --------------------
 static void load_config(const char *path, int *brightness, int *timeout,
                         char *backlight, size_t bl_sz,
-                        char *device, size_t dev_sz) {
+                        char *device, size_t dev_sz,
+                        int *poll_interval, int *dim_percent) {
     FILE *f = fopen(path, "r");
     if (!f) return; // No config file found — just skip
 
     char line[128];
+    int line_num = 0;
     while (fgets(line, sizeof(line), f)) {
+        line_num++;
         trim(line);
         if (line[0] == '#' || line[0] == ';' || line[0] == '\0')
             continue;
@@ -99,29 +125,88 @@ static void load_config(const char *path, int *brightness, int *timeout,
                 strncpy(backlight, value, bl_sz - 1);
             else if (strcmp(key, "device") == 0)
                 strncpy(device, value, dev_sz - 1);
+            else if (strcmp(key, "poll_interval") == 0)
+                *poll_interval = atoi(value);
+            else if (strcmp(key, "dim_percent") == 0)
+                *dim_percent = atoi(value);
+            else
+                syslog(LOG_WARNING, "Unknown config key '%s' at line %d", key, line_num);
+        } else {
+            syslog(LOG_WARNING, "Malformed config line %d: %s", line_num, line);
         }
     }
     fclose(f);
 }
 
 // --------------------
+// Read max_brightness from sysfs
+// --------------------
+static int get_max_brightness(const char *backlight) {
+    char path[128];
+    snprintf(path, sizeof(path), "/sys/class/backlight/%s/max_brightness", backlight);
+    
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) {
+        syslog(LOG_WARNING, "Cannot read %s, assuming max=255", path);
+        return 255;
+    }
+    
+    char buf[8];
+    ssize_t n = read(fd, buf, sizeof(buf) - 1);
+    close(fd);
+    
+    if (n <= 0) return 255;
+    buf[n] = '\0';
+    int max = atoi(buf);
+    
+    // Clamp to valid range
+    if (max < 10 || max > 254) {
+        syslog(LOG_WARNING, "Invalid max_brightness %d, using 255", max);
+        return 255;
+    }
+    
+    return max;
+}
+
+// --------------------
+// Read current brightness from sysfs
+// --------------------
+static int read_brightness(int fd) {
+    char buf[8];
+    lseek(fd, 0, SEEK_SET);
+    ssize_t n = read(fd, buf, sizeof(buf) - 1);
+    if (n <= 0) return -1;
+    buf[n] = '\0';
+    return atoi(buf);
+}
+
+// --------------------
 // Write brightness safely to /sys/class/backlight
-// Adds lseek() and fsync() for kernel write reliability
+// Uses lseek() to reset file position and caching to prevent redundant writes
+// Note: fsync() removed - sysfs writes are synchronous to hardware; fsync() only
+// syncs VFS metadata which is unnecessary and adds 5-10ms latency per write
 // --------------------
 static int set_brightness(struct display_state *state, int brightness) {
-    if (brightness < MIN_BRIGHTNESS && brightness != 0)
+    // Skip if brightness unchanged (prevents redundant hardware writes)
+    if (brightness == state->current_brightness)
+        return 0;
+    
+    // Enforce minimum brightness (except for screen off)
+    if (brightness < MIN_BRIGHTNESS && brightness != SCREEN_OFF)
         brightness = MIN_BRIGHTNESS;
 
     char buf[8];
     int len = snprintf(buf, sizeof(buf), "%d", brightness);
     lseek(state->bright_fd, 0, SEEK_SET);
     int ret = write(state->bright_fd, buf, len);
-    fsync(state->bright_fd);
-
+    // fsync(state->bright_fd);  // REMOVED: sysfs writes are synchronous
+    
     if (ret != len) {
         syslog(LOG_ERR, "Failed to set brightness: %s", strerror(errno));
         return -1;
     }
+    
+    state->current_brightness = brightness;
     return 0;
 }
 
@@ -130,7 +215,7 @@ static int set_brightness(struct display_state *state, int brightness) {
 // --------------------
 static int restore_brightness(struct display_state *state) {
     if (set_brightness(state, state->user_brightness) == 0) {
-        state->state = 0;
+        state->state = STATE_FULL;
         state->last_input = time(NULL);
         syslog(LOG_INFO, "Restored brightness to %d", state->user_brightness);
         return 0;
@@ -139,20 +224,29 @@ static int restore_brightness(struct display_state *state) {
 }
 
 // --------------------
-// Check dim/off timeouts relative to last touch event
+// Check dim/off timeouts using absolute time comparisons
+// Handles missed poll cycles by checking if current time has passed target times
 // --------------------
 static void check_timeouts(struct display_state *state) {
     time_t now = time(NULL);
     double idle = difftime(now, state->last_input);
-
-    if (state->state == 0 && idle >= state->dim_timeout) {
-        // Transition to DIM state
-        if (set_brightness(state, state->dim_brightness) == 0)
-            state->state = 1;
-    } else if ((state->state == 0 || state->state == 1) && idle >= state->off_timeout) {
-        // Transition to OFF state (brightness=0)
-        if (set_brightness(state, 0) == 0)
-            state->state = 2;
+    
+    time_t dim_time = state->last_input + state->dim_timeout;
+    time_t off_time = state->last_input + state->off_timeout;
+    
+    // Check if we should be OFF (highest priority - guarantees power saving)
+    if (now >= off_time && state->state != STATE_OFF) {
+        if (set_brightness(state, SCREEN_OFF) == 0) {
+            syslog(LOG_INFO, "Display off (idle=%.0fs)", idle);
+            state->state = STATE_OFF;
+        }
+    }
+    // Check if we should be DIMMED (only if not already off)
+    else if (now >= dim_time && state->state == STATE_FULL) {
+        if (set_brightness(state, state->dim_brightness) == 0) {
+            syslog(LOG_INFO, "Display dimmed (idle=%.0fs)", idle);
+            state->state = STATE_DIMMED;
+        }
     }
 }
 
@@ -167,11 +261,14 @@ int main(int argc, char *argv[]) {
     int off_timeout = 300;
     char backlight[64] = "rpi_backlight";
     char input_dev[32] = "event0";
+    int poll_interval = 100;        // Default 100ms (recommended: 50-1000ms)
+    int dim_percent = 50;            // Default 50% of off_timeout
 
     // Load config from /etc/touch-timeout.conf (if present)
     load_config(CONFIG_PATH, &user_brightness, &off_timeout,
                 backlight, sizeof(backlight),
-                input_dev, sizeof(input_dev));
+                input_dev, sizeof(input_dev),
+                &poll_interval, &dim_percent);
 
     // Command-line args override config (if provided)
     if (argc > 1) user_brightness = atoi(argv[1]);
@@ -179,36 +276,78 @@ int main(int argc, char *argv[]) {
     if (argc > 3) strncpy(backlight, argv[3], sizeof(backlight) - 1);
     if (argc > 4) strncpy(input_dev, argv[4], sizeof(input_dev) - 1);
 
-    // Input validation
-    if (user_brightness < MIN_BRIGHTNESS || user_brightness > 255) {
-        syslog(LOG_ERR, "Brightness must be between %d and 255", MIN_BRIGHTNESS);
-        exit(EXIT_FAILURE);
+    // Validate poll_interval (hardware limits: 10ms to 2000ms)
+    // Recommended: 50-1000ms for balance of responsiveness and efficiency
+    if (poll_interval < 10 || poll_interval > 2000) {
+        syslog(LOG_WARNING, "Invalid poll_interval %dms (valid: 10-2000), using default 100ms", poll_interval);
+        poll_interval = 100;
     }
+
+    // Validate dim_percent (10-100%)
+    if (dim_percent < 10 || dim_percent > 100) {
+        syslog(LOG_WARNING, "Invalid dim_percent %d%% (valid: 10-100), using default 50%%", dim_percent);
+        dim_percent = 50;
+    }
+
+    // Read and validate max_brightness
+    // NOTE: For RPi official 7" touchscreen, max brightness and current draw verified
+    // at 200 by forum users. Values 201-254 actually decrease brightness and current.
+    // Recommend setting brightness ≤200 for this display.
+    int max_brightness = get_max_brightness(backlight);
+    syslog(LOG_INFO, "Max brightness for %s: %d (recommend ≤200 for RPi 7\" display)", 
+           backlight, max_brightness);
+
+    // Validate and clamp user_brightness
+    if (user_brightness < MIN_BRIGHTNESS) {
+        syslog(LOG_WARNING, "Brightness %d below minimum, using %d", user_brightness, MIN_BRIGHTNESS);
+        user_brightness = MIN_BRIGHTNESS;
+    }
+    if (user_brightness > max_brightness) {
+        syslog(LOG_WARNING, "Brightness %d exceeds max, clamping to %d", user_brightness, max_brightness);
+        user_brightness = max_brightness;
+    }
+
+    // Validate off_timeout
     if (off_timeout < 10) {
         syslog(LOG_ERR, "Timeout must be >= 10s");
         exit(EXIT_FAILURE);
     }
 
-    // Initialize display state structure
-    struct display_state state = {
-        .user_brightness = user_brightness,
-        .dim_brightness = (user_brightness / 10 < MIN_DIM_BRIGHTNESS)
-                            ? MIN_DIM_BRIGHTNESS : user_brightness / 10,
-        .dim_timeout = off_timeout / 2,
-        .off_timeout = off_timeout,
-        .last_input = time(NULL),
-        .state = 0
-    };
+    // Calculate dim_timeout from percentage
+    int dim_timeout = (off_timeout * dim_percent) / 100;
+    if (dim_percent == 100) {
+        syslog(LOG_INFO, "Dimming disabled (dim_percent=100%%)");
+    }
 
-    // Open brightness control file
+    // Open brightness control file (O_RDWR for reading initial state)
     char bright_path[128];
     snprintf(bright_path, sizeof(bright_path),
              "/sys/class/backlight/%s/brightness", backlight);
-    state.bright_fd = open(bright_path, O_WRONLY);
-    if (state.bright_fd == -1) {
+    int bright_fd = open(bright_path, O_RDWR);
+    if (bright_fd == -1) {
         syslog(LOG_ERR, "Error opening %s: %s", bright_path, strerror(errno));
         exit(EXIT_FAILURE);
     }
+
+    // Read initial brightness from hardware
+    int initial_brightness = read_brightness(bright_fd);
+    if (initial_brightness < 0) {
+        syslog(LOG_WARNING, "Cannot read current brightness, assuming %d", user_brightness);
+        initial_brightness = user_brightness;
+    }
+
+    // Initialize display state structure
+    struct display_state state = {
+        .bright_fd = bright_fd,
+        .user_brightness = user_brightness,
+        .dim_brightness = (user_brightness / 10 < MIN_DIM_BRIGHTNESS)
+                            ? MIN_DIM_BRIGHTNESS : user_brightness / 10,
+        .current_brightness = initial_brightness,
+        .dim_timeout = dim_timeout,
+        .off_timeout = off_timeout,
+        .last_input = time(NULL),
+        .state = STATE_FULL
+    };
 
     // Open touchscreen input device
     char dev_path[64];
@@ -228,8 +367,9 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    syslog(LOG_INFO, "Started: brightness=%d, dim=%d, dim_timeout=%ds, off_timeout=%ds",
-           state.user_brightness, state.dim_brightness, state.dim_timeout, state.off_timeout);
+    syslog(LOG_INFO, "Started v1.1: brightness=%d, dim=%d (%d%% @ %ds), off=%ds, poll=%dms",
+           state.user_brightness, state.dim_brightness, dim_percent, 
+           state.dim_timeout, state.off_timeout, poll_interval);
 
     // Graceful shutdown handling
     signal(SIGTERM, handle_signal);
@@ -240,14 +380,14 @@ int main(int argc, char *argv[]) {
     struct input_event event;
 
     while (running) {
-        int ret = poll(&pfd, 1, POLL_INTERVAL_MS);
+        int ret = poll(&pfd, 1, poll_interval);
 
         if (ret > 0 && (pfd.revents & POLLIN)) {
             // Read all queued events
             while (read(event_fd, &event, sizeof(event)) > 0) {
                 if (event.type == EV_KEY || event.type == EV_ABS) {
                     // Any touch resets timeout or restores screen
-                    if (state.state != 0)
+                    if (state.state != STATE_FULL)
                         restore_brightness(&state);
                     else
                         state.last_input = time(NULL);
