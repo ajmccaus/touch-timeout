@@ -1,11 +1,11 @@
 /*
  * touch-timeout.c
  * ----------------
- * A lightweight touchscreen activity monitor for Raspberry Pi 7" displays.
+ * A lightweight touchscreen activity monitor optimized for Raspberry Pi 7" touchscreens.
  *
- * VERSION: 1.1
+ * VERSION: 0.2.0
  * 
- * Changes from v1.0:
+ * Changes from 0.1.0:
  *  - Added brightness caching to prevent redundant writes
  *  - Reads and validates max_brightness from sysfs
  *  - Configurable poll_interval and dim_percent in config file
@@ -22,13 +22,13 @@
  *  - Safe sysfs writes (lseek, cached)
  *  - Graceful shutdown via SIGTERM/SIGINT (systemd compatible)
  *
-  * TODO for v1.2:
+  * TODO for v1.1.0:
  *  - [ ] Make dim_brightness separately configurable (config key: dim_brightness)
  *        Current: auto-calculated as user_brightness/10
  *        Proposed: dim_brightness=20 in config file
  *  - [ ] Reduce restore_brightness() log level to LOG_DEBUG
  *
- * Author: Andrew McCausland (optimized & hardened version)
+ * Author: Andrew McCausland
  * License: GPL v3
  */
 
@@ -45,6 +45,7 @@
 #include <syslog.h>
 #include <ctype.h>
 #include <sys/types.h>
+#include <assert.h>
 
 #define MIN_BRIGHTNESS       15     // Minimum allowed brightness (avoids flicker)
 #define MIN_DIM_BRIGHTNESS   10     // Minimum allowed dim level
