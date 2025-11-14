@@ -1,6 +1,6 @@
 [Unit]
-Description=Touchscreen Brightness & Timeout
-After=multi-user.target
+Description=Touchscreen Brightness & Timeout Manager
+After=multi-user.target systemd-modules-load.service systemd-backlight@.service
 StartLimitIntervalSec=0
 
 [Service]
@@ -8,11 +8,14 @@ Type=simple
 ExecStart=/usr/bin/touch-timeout
 Restart=on-failure
 RestartSec=5
-Nice=10
-IOSchedulingClass=idle
+
+# Security hardening
 ProtectSystem=full
-ProtectHome=yes
+PrivateTmp=true
 NoNewPrivileges=true
+ReadWritePaths=/sys/class/backlight
+
+# Resource management (removed Nice/IOSchedulingClass for touch responsiveness)
 
 [Install]
 WantedBy=multi-user.target
