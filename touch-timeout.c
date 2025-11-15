@@ -5,6 +5,9 @@
  *
  * VERSION: 0.2.1
  * 
+ * Changes from 0.2.0:
+ *  - Added assert() validation
+ *
  * Changes from 0.1.0:
  *  - Added brightness caching to prevent redundant writes
  *  - Reads and validates max_brightness from sysfs
