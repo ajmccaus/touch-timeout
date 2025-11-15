@@ -13,6 +13,10 @@ sudo install -m 755 touch-timeout /usr/bin/
 sudo install -m 644 touch-timeout.service /etc/systemd/system/
 sudo install -m 644 touch-timeout.conf /etc/
 
+# Using Makefile if installing on same system as compiler
+make
+sudo make install
+
 # Configure (edit brightness, timeout, etc.)
 sudo nano /etc/touch-timeout.conf
 
