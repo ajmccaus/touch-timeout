@@ -11,6 +11,8 @@ clean:
 	rm -f $(TARGET)
 
 install: $(TARGET)
-	install -m 755 $(TARGET) /usr/local/bin/
+	install -m 755 $(TARGET) /usr/bin/
+	install -m 644 touch-timeout.service /etc/systemd/system/
+	install -m 644 touch-timeout.conf /etc/
 
 .PHONY: all clean install
