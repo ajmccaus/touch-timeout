@@ -55,3 +55,10 @@ device=event0             # Touchscreen in /dev/input/
 
 ## To build and deploy:
 see installation instructions (INSTALLATION.md)
+
+## Support Policy
+This is a hobby project maintained in my spare time.
+- Bug reports: Welcomed with reproduction steps
+- Feature requests: Considered but not guaranteed
+- PRs: Reviewed within 2 weeks
+- Commercial support: Not available
