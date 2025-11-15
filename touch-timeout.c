@@ -335,7 +335,7 @@ int main(int argc, char *argv[]) {
     int user_brightness = 100;
     int off_timeout = 300;
     char backlight[64] = "rpi_backlight";
-    char input_dev[32] = "event0";
+    char input_dev[64] = "event0";
     int poll_interval = 100;        // Default 100ms (recommended: 50-1000ms)
     int dim_percent = 50;            // Default 50% of off_timeout
 
