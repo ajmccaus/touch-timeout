@@ -52,6 +52,7 @@
 
 #define MIN_BRIGHTNESS       15     // Minimum allowed brightness (avoids flicker)
 #define MIN_DIM_BRIGHTNESS   10     // Minimum allowed dim level
+#define MAX_BRIGHTNESS_LIMIT 255    // Valid range: 0-255 (8-bit PWM duty cycle)
 #define SCREEN_OFF           0      // Brightness value for screen off
 #define CONFIG_PATH          "/etc/touch-timeout.conf"
 
@@ -100,6 +101,19 @@ static void trim(char *s) {
 }
 
 // --------------------
+// Safe string-to-int (validates untrusted input)
+// --------------------
+static int safe_atoi(const char *str, int *result) {
+    char *endptr;
+    errno = 0;
+    long val = strtol(str, &endptr, 10);
+    if (endptr == str || *endptr != '\0' || errno == ERANGE || val < INT_MIN || val > INT_MAX)
+        return -1;
+    *result = (int)val;
+    return 0;
+}
+
+// --------------------
 // Parse /etc/touch-timeout.conf for key=value pairs
 // Supports:
 //   brightness=150
@@ -127,20 +141,33 @@ static void load_config(const char *path, int *brightness, int *timeout,
         char key[64], value[64];
         if (sscanf(line, "%63[^=]=%63s", key, value) == 2) {
             trim(key); trim(value);
-            if (strcmp(key, "brightness") == 0)
-                *brightness = atoi(value);
-            else if (strcmp(key, "off_timeout") == 0)
-                *timeout = atoi(value);
+            
+            int tmp;
+            if (strcmp(key, "brightness") == 0) {
+                if (safe_atoi(value, &tmp) == 0) *brightness = tmp;
+                else syslog(LOG_WARNING, "Invalid brightness '%s' at line %d", value, line_num);
+            }
+            else if (strcmp(key, "off_timeout") == 0) {
+                if (safe_atoi(value, &tmp) == 0) *timeout = tmp;
+                else syslog(LOG_WARNING, "Invalid off_timeout '%s' at line %d", value, line_num);
+            }
+            // snprintf() advantages over strncpy():
+            // 1. Always null-terminates (strncpy() does NOT if src >= dest size)
+            // 2. Single operation instead of two (strncpy + manual '\0')
+            // 3. Returns chars written (useful for overflow detection)
+            // 4. More secure - CERT C Coding Standard recommends snprintf() over strncpy()
             else if (strcmp(key, "backlight") == 0)
-                strncpy(backlight, value, bl_sz - 1);
-                backlight[bl_sz - 1] = '\0'; // Null-terminate strncpy (defensive)
+                snprintf(backlight, bl_sz, "%s", value);  // Always null-terminates
             else if (strcmp(key, "device") == 0)
-                strncpy(device, value, dev_sz - 1);
-                device[dev_sz - 1] = '\0'; // Null-terminate strncpy (defensive)
-            else if (strcmp(key, "poll_interval") == 0)
-                *poll_interval = atoi(value);
-            else if (strcmp(key, "dim_percent") == 0)
-                *dim_percent = atoi(value);
+                snprintf(device, dev_sz, "%s", value);    // Always null-terminates
+            else if (strcmp(key, "poll_interval") == 0) {
+                if (safe_atoi(value, &tmp) == 0) *poll_interval = tmp;
+                else syslog(LOG_WARNING, "Invalid poll_interval '%s' at line %d", value, line_num);
+            }
+            else if (strcmp(key, "dim_percent") == 0) {
+                if (safe_atoi(value, &tmp) == 0) *dim_percent = tmp;
+                else syslog(LOG_WARNING, "Invalid dim_percent '%s' at line %d", value, line_num);
+            }
             else
                 syslog(LOG_WARNING, "Unknown config key '%s' at line %d", key, line_num);
         } else {
@@ -159,22 +186,22 @@ static int get_max_brightness(const char *backlight) {
     
     int fd = open(path, O_RDONLY);
     if (fd < 0) {
-        syslog(LOG_WARNING, "Cannot read %s, assuming max=254", path);
-        return 254;
+        syslog(LOG_WARNING, "Cannot read %s, assuming max=255", path);
+        return MAX_BRIGHTNESS_LIMIT;
     }
     
     char buf[8];
     ssize_t n = read(fd, buf, sizeof(buf) - 1);
     close(fd);
     
-    if (n <= 0) return 254;
+    if (n <= 0) return MAX_BRIGHTNESS_LIMIT;
     buf[n] = '\0';
     int max = atoi(buf);
     
     // Clamp to valid range
-    if (max < 10 || max > 254) {
-        syslog(LOG_WARNING, "Invalid max_brightness %d, using 254", max);
-        return 254;
+    if (max < 10 || max > MAX_BRIGHTNESS_LIMIT) {
+        syslog(LOG_WARNING, "Invalid max_brightness %d, using 255", max);
+        return MAX_BRIGHTNESS_LIMIT;
     }
     
     return max;
@@ -185,7 +212,9 @@ static int get_max_brightness(const char *backlight) {
 // --------------------
 static int read_brightness(int fd) {
     char buf[8];
-    lseek(fd, 0, SEEK_SET);
+    // lseek(fd, 0, SEEK_SET);
+    // No lseek needed: fd opened at offset 0, only read once at startup
+    // Only set_brightness() needs lseek (repeated writes)
     ssize_t n = read(fd, buf, sizeof(buf) - 1);
     if (n <= 0) return -1;
     buf[n] = '\0';
@@ -201,8 +230,9 @@ static int read_brightness(int fd) {
 static int set_brightness(struct display_state *state, int brightness) {
     // Catches: NULL pointer dereference from uninitialized state
     assert(state != NULL);
-    // Catches: Brightness overflow from config parsing or calculation bugs
-    assert(brightness >= 0 && brightness <= 254);
+    // Catches: Brightness overflow from config parsing or calculation bugs  
+    // Valid range: 0-255 (8-bit PWM duty cycle)
+    assert(brightness >= 0 && brightness <= MAX_BRIGHTNESS_LIMIT);
     // Catches: File descriptor corruption or early close
     assert(state->bright_fd > 0);
  
@@ -216,7 +246,12 @@ static int set_brightness(struct display_state *state, int brightness) {
 
     char buf[8];
     int len = snprintf(buf, sizeof(buf), "%d", brightness);
-    lseek(state->bright_fd, 0, SEEK_SET);
+    // Reset file position for repeated writes to same sysfs file
+    // POSIX requires checking lseek() return - can fail on special files
+    if (lseek(state->bright_fd, 0, SEEK_SET) == -1) {
+        syslog(LOG_ERR, "lseek failed: %s", strerror(errno));
+        return -1;
+    }
     int ret = write(state->bright_fd, buf, len);
     // fsync(state->bright_fd);  // REMOVED: sysfs writes are synchronous
     
@@ -234,7 +269,7 @@ static int set_brightness(struct display_state *state, int brightness) {
 // --------------------
 static int restore_brightness(struct display_state *state) {
     // Catches: Invalid user_brightness from config validation bypass
-    assert(state->user_brightness >= MIN_BRIGHTNESS && state->user_brightness <= 254);
+    assert(state->user_brightness >= MIN_BRIGHTNESS && state->user_brightness <= MAX_BRIGHTNESS_LIMIT);
     // Catches: State machine corruption before restore
     assert(state->state == STATE_DIMMED || state->state == STATE_OFF);
  
@@ -261,8 +296,14 @@ static void check_timeouts(struct display_state *state) {
     
     time_t now = time(NULL);
     double idle = difftime(now, state->last_input);
-    // Catches: Clock adjusted backwards (NTP sync or manual change)
-    assert(idle >= -2.0);  // Allow 2s clock skew tolerance
+ 
+    // Handle clock adjustments gracefully (NTP can shift time backwards)
+    // Using assert() here would crash daemon during normal NTP operations
+    if (idle < -5.0) {
+        syslog(LOG_WARNING, "Clock adjusted backwards by %.1fs - resetting timer", -idle);
+        state->last_input = now;  // Reset baseline to current time
+        return;  // Skip timeout checks this cycle
+    }
     
     time_t dim_time = state->last_input + state->dim_timeout;
     time_t off_time = state->last_input + state->off_timeout;
@@ -304,8 +345,20 @@ int main(int argc, char *argv[]) {
                 &poll_interval, &dim_percent);
 
     // Command-line args override config (if provided)
-    if (argc > 1) user_brightness = atoi(argv[1]);
-    if (argc > 2) off_timeout = atoi(argv[2]);
+    //if (argc > 1) user_brightness = atoi(argv[1]);
+    //if (argc > 2) off_timeout = atoi(argv[2]);
+    if (argc > 1) {
+        if (safe_atoi(argv[1], &user_brightness) != 0) {
+            syslog(LOG_ERR, "Invalid brightness argument: %s", argv[1]);
+            exit(EXIT_FAILURE);
+        }
+    }
+    if (argc > 2) {
+        if (safe_atoi(argv[2], &off_timeout) != 0) {
+            syslog(LOG_ERR, "Invalid timeout argument: %s", argv[2]);
+            exit(EXIT_FAILURE);
+        }
+    }
     if (argc > 3) strncpy(backlight, argv[3], sizeof(backlight) - 1);
     if (argc > 4) strncpy(input_dev, argv[4], sizeof(input_dev) - 1);
 
@@ -324,7 +377,8 @@ int main(int argc, char *argv[]) {
 
     // Read and validate max_brightness
     // NOTE: For RPi official 7" touchscreen, max brightness and current draw verified
-    // at 200 by forum users. Values 201-254 actually decrease brightness and current.
+    // at 200 by forum users. Values 201-255 may decrease brightness on some displays
+    // due to hardware quirks, but protocol supports full 0-255 range.
     // Recommend setting brightness ≤200 for this display.
     int max_brightness = get_max_brightness(backlight);
     syslog(LOG_INFO, "Max brightness for %s: %d (recommend ≤200 for RPi 7\" display)", 
