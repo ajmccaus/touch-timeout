@@ -60,5 +60,5 @@ see installation instructions (INSTALLATION.md)
 This is a hobby project maintained in my spare time.
 - Bug reports: Welcomed with reproduction steps
 - Feature requests: Considered but not guaranteed
-- PRs: Reviewed within 2 weeks
+- PRs: We'll see
 - Commercial support: Not available
