@@ -7,6 +7,10 @@
  * 
  * Changes from 0.2.0:
  *  - Added assert() validation
+ *  - Added auto versioning with #define VERSION
+ *  - Added safe_atoi() helper function
+ *  - other small fixes to get complied properly
+ *  - tested on RPi 4 with 7" touchscreen
  *
  * Changes from 0.1.0:
  *  - Added brightness caching to prevent redundant writes
@@ -56,6 +60,7 @@
 #define MAX_BRIGHTNESS_LIMIT 255    // Valid range: 0-255 (8-bit PWM duty cycle)
 #define SCREEN_OFF           0      // Brightness value for screen off
 #define CONFIG_PATH          "/etc/touch-timeout.conf"
+#define VERSION              "0.2.1"
 
 static volatile int running = 1;    // Used for graceful shutdown on SIGTERM/SIGINT
 
@@ -461,7 +466,7 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    syslog(LOG_INFO, "Started v1.1: brightness=%d, dim=%d (%d%% @ %ds), off=%ds, poll=%dms",
+    syslog(LOG_INFO, "Started v"VERSION": brightness=%d, dim=%d (%d%% @ %ds), off=%ds, poll=%dms",
            state.user_brightness, state.dim_brightness, dim_percent, 
            state.dim_timeout, state.off_timeout, poll_interval);
 
