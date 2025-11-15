@@ -38,6 +38,9 @@ backlight=rpi_backlight   # Device name in /sys/class/backlight/
 device=event0             # Touchscreen in /dev/input/
 ```
 
+## v1.1.0 Goals
+- [ ] Configurable dim_brightness (calculation provides default of user_brightness ÷ 10, config file provides user override)
+
 **Note**: For RPi official 7" touchscreen, brightness >200 reduces brightness and current draw (see https://forums.raspberrypi.com/viewtopic.php?t=216821). Recommend `brightness=200` or lower.
 
 ## To build and deploy:
