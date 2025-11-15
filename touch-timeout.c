@@ -3,7 +3,7 @@
  * ----------------
  * A lightweight touchscreen activity monitor optimized for Raspberry Pi 7" touchscreens.
  *
- * VERSION: 0.2.0
+ * VERSION: 0.2.1
  * 
  * Changes from 0.1.0:
  *  - Added brightness caching to prevent redundant writes
@@ -45,6 +45,7 @@
 #include <syslog.h>
 #include <ctype.h>
 #include <sys/types.h>
+#include <assert.h>
 
 #define MIN_BRIGHTNESS       15     // Minimum allowed brightness (avoids flicker)
 #define MIN_DIM_BRIGHTNESS   10     // Minimum allowed dim level
@@ -155,22 +156,22 @@ static int get_max_brightness(const char *backlight) {
     
     int fd = open(path, O_RDONLY);
     if (fd < 0) {
-        syslog(LOG_WARNING, "Cannot read %s, assuming max=255", path);
-        return 255;
+        syslog(LOG_WARNING, "Cannot read %s, assuming max=254", path);
+        return 254;
     }
     
     char buf[8];
     ssize_t n = read(fd, buf, sizeof(buf) - 1);
     close(fd);
     
-    if (n <= 0) return 255;
+    if (n <= 0) return 254;
     buf[n] = '\0';
     int max = atoi(buf);
     
     // Clamp to valid range
     if (max < 10 || max > 254) {
-        syslog(LOG_WARNING, "Invalid max_brightness %d, using 255", max);
-        return 255;
+        syslog(LOG_WARNING, "Invalid max_brightness %d, using 254", max);
+        return 254;
     }
     
     return max;
@@ -195,6 +196,13 @@ static int read_brightness(int fd) {
 // syncs VFS metadata which is unnecessary and adds 5-10ms latency per write
 // --------------------
 static int set_brightness(struct display_state *state, int brightness) {
+    // Catches: NULL pointer dereference from uninitialized state
+    assert(state != NULL);
+    // Catches: Brightness overflow from config parsing or calculation bugs
+    assert(brightness >= 0 && brightness <= 254);
+    // Catches: File descriptor corruption or early close
+    assert(state->bright_fd > 0);
+ 
     // Skip if brightness unchanged (prevents redundant hardware writes)
     if (brightness == state->current_brightness)
         return 0;
@@ -222,6 +230,11 @@ static int set_brightness(struct display_state *state, int brightness) {
 // Restore full brightness after a touch event
 // --------------------
 static int restore_brightness(struct display_state *state) {
+    // Catches: Invalid user_brightness from config validation bypass
+    assert(state->user_brightness >= MIN_BRIGHTNESS && state->user_brightness <= 254);
+    // Catches: State machine corruption before restore
+    assert(state->state == STATE_DIMMED || state->state == STATE_OFF);
+ 
     if (set_brightness(state, state->user_brightness) == 0) {
         state->state = STATE_FULL;
         state->last_input = time(NULL);
@@ -236,8 +249,17 @@ static int restore_brightness(struct display_state *state) {
 // Handles missed poll cycles by checking if current time has passed target times
 // --------------------
 static void check_timeouts(struct display_state *state) {
+    // Catches: NULL pointer from incorrect function call
+    assert(state != NULL);
+    // Catches: Invalid state enum (memory corruption or uninitialized)
+    assert(state->state >= STATE_FULL && state->state <= STATE_OFF);
+    // Catches: Timeout misconfiguration or integer overflow
+    assert(state->dim_timeout > 0 && state->dim_timeout <= state->off_timeout);
+    
     time_t now = time(NULL);
     double idle = difftime(now, state->last_input);
+    // Catches: Clock adjusted backwards (NTP sync or manual change)
+    assert(idle >= -2.0);  // Allow 2s clock skew tolerance
     
     time_t dim_time = state->last_input + state->dim_timeout;
     time_t off_time = state->last_input + state->off_timeout;
@@ -323,6 +345,12 @@ int main(int argc, char *argv[]) {
 
     // Calculate dim_timeout from percentage
     int dim_timeout = (off_timeout * dim_percent) / 100;
+    
+    // Catches: Arithmetic overflow or invalid config combinations
+    assert(dim_timeout > 0 && dim_timeout <= off_timeout);
+    // Catches: Validation bypass allowing out-of-range brightness
+    assert(user_brightness >= MIN_BRIGHTNESS && user_brightness <= max_brightness);
+  
     if (dim_percent == 100) {
         syslog(LOG_INFO, "Dimming disabled (dim_percent=100%%)");
     }
