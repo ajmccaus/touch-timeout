@@ -50,14 +50,23 @@ device=event0             # Touchscreen in /dev/input/
 ```
 **Note**: For RPi official 7" touchscreen, brightness >200 reduces brightness and current draw (see https://forums.raspberrypi.com/viewtopic.php?t=216821). Recommend `brightness=200` or lower.
 
-## v1.1.0 Goals
-- [ ] **Code Foundation**: Refactor into modular architecture with unit testing
-- [ ] **Enhanced Dim Control**: Extend dim timeout to 1% (1%-100% of off_timeout, 1s minimum)
-- [ ] **Build System**: Add Makefile and proper project structure
+## Product Roadmap
 
-## v1.2.0 Goals  
-- [ ] **Extended Input Support**: Add USB keyboard and mouse event detection
-- [ ] **Configuration**: Configurable dim brightness levels (% of brightness, 5% to 100%, minimum 10 to avoid flicker) 
+### v1.1.0: Foundation (In Progress)
+- [ ] **SD Longevity**: Conditional logging (`log_level=0/1/2` in config) eliminates writes
+- [ ] **Modular Architecture**: 3-file split (`logic.c/h`, `io.c/h`, `main.c`) with unit tests
+- [ ] **Enhanced Dim Control**: Configurable `dim_brightness` (% of brightness, 5%-100%, min 10)
+- [ ] **Extended Dim Timeout**: Support 1%-100% of `off_timeout` (1s minimum)
+- [ ] **Build System**: Makefile with test target (`make test`)
+
+### v1.2.0: Universal Input Support (Planned)
+- [ ] **Auto-Detect Devices**: Scans `/dev/input/by-path/` for touch/keyboard/mouse (no manual config)
+- [ ] **USB Hotplug**: Detects devices added after boot via `inotify` (plug-and-play)
+- [ ] **Multi-Device Polling**: Monitor up to 10 input devices simultaneously
+
+### v1.3.0: Audio Integration (Proposed)
+- [ ] **Audio Activity Detection**: Optional PulseAudio/ALSA monitoring resets timeout during playback
+- [ ] **SSH Login Detection**: Prevent screen-off during remote sessions
 
 ## To build and deploy:
 see installation instructions (INSTALLATION.md)
