@@ -51,9 +51,13 @@ device=event0             # Touchscreen in /dev/input/
 **Note**: For RPi official 7" touchscreen, brightness >200 reduces brightness and current draw (see https://forums.raspberrypi.com/viewtopic.php?t=216821). Recommend `brightness=200` or lower.
 
 ## v1.1.0 Goals
-- [ ] Configurable dim_brightness (calculation provides default of user_brightness ÷ 10, config file provides user override)
-- [ ] extend dim timeout percent to 1% (1% to 100% of off_timeout with 1s minimum)
-- [ ] add support for USB keyboards and mice, to restore brightness on those events
+- [ ] **Code Foundation**: Refactor into modular architecture with unit testing
+- [ ] **Enhanced Dim Control**: Extend dim timeout to 1% (1%-100% of off_timeout, 1s minimum)
+- [ ] **Build System**: Add Makefile and proper project structure
+
+## v1.2.0 Goals  
+- [ ] **Extended Input Support**: Add USB keyboard and mouse event detection
+- [ ] **Configuration**: Configurable dim brightness levels
 
 ## To build and deploy:
 see installation instructions (INSTALLATION.md)
