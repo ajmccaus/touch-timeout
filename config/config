@@ -1,1 +1,41 @@
+# /etc/touch-timeout.conf
+# Configuration file for touch-timeout service
+#
+# All values are optional - program uses defaults if not specified
+# Command-line arguments override these settings
 
+# Display brightness when active (15-255)
+# Recommended ≤200 for RPi official 7" touchscreen (verified max brightness/current)
+# Default: 100
+brightness=150
+
+# Seconds of inactivity before turning off display
+# Must be ≥10 seconds
+# Default: 300 (5 minutes)
+off_timeout=300
+
+# Percentage of off_timeout when dimming occurs (10-100%)
+# 50 = dim at halfway point (e.g., 150s if off_timeout=300s)
+# 100 = no dimming (dims at same instant as off)
+# Default: 50
+dim_percent=50
+
+# Backlight device name (found in /sys/class/backlight/)
+# Common values: rpi_backlight, 10-0045
+# Default: rpi_backlight
+backlight=rpi_backlight
+
+# Input device name (found in /dev/input/)
+# Common values: event0, event1, event2
+# Use 'ls -l /dev/input/by-path/' to identify touchscreen
+# Default: event0
+device=event0
+
+# Polling interval in milliseconds (10-2000)
+# Lower = more responsive but higher CPU usage
+# Recommended range: 50-1000ms
+# 50ms  = ~0.15% CPU (very responsive)
+# 100ms = ~0.08% CPU (balanced - recommended)
+# 200ms = ~0.04% CPU (efficient)
+# Default: 100
+poll_interval=100
