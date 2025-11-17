@@ -57,7 +57,7 @@ device=event0             # Touchscreen in /dev/input/
 
 ## v1.2.0 Goals  
 - [ ] **Extended Input Support**: Add USB keyboard and mouse event detection
-- [ ] **Configuration**: Configurable dim brightness levels
+- [ ] **Configuration**: Configurable dim brightness levels (% of brightness, 5% to 100%, minimum 10 to avoid flicker) 
 
 ## To build and deploy:
 see installation instructions (INSTALLATION.md)
