@@ -53,7 +53,7 @@ device=event0             # Touchscreen in /dev/input/
 ## v1.1.0 Goals
 - [ ] Configurable dim_brightness (calculation provides default of user_brightness ÷ 10, config file provides user override)
 - [ ] extend dim timeout percent to 1% (1% to 100% of off_timeout with 1s minimum)
-- [ ] add support for USB keyboards and mice, to restor brightness on those events
+- [ ] add support for USB keyboards and mice, to restore brightness on those events
 
 ## To build and deploy:
 see installation instructions (INSTALLATION.md)
