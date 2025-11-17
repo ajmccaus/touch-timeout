@@ -34,7 +34,7 @@ Benchmarked on Raspberry Pi 4 (1.5GHz ARM Cortex-A72):
 | **Latency** | <200ms | Touch-to-restore response time |
 | **I/O efficiency** | Cached | No redundant sysfs writes |
 
-Tested over 9+ minutes continuous operation with no performance degradation.
+Tested over 24+ hours continuous operation with no performance degradation.
 
 ## Configuration
 
