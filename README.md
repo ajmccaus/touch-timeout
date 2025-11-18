@@ -52,25 +52,43 @@ device=event0             # Touchscreen in /dev/input/
 
 ## Product Roadmap
 
-### v1.0.1: SD Longevity (In Progress)
-- [ ] **Conditional logging**: log_level=none/info/debug eliminates writes
-- [ ] --debug and --foreground modes
-- [ ] Remove non-essential logs
+### v1.0.1: Zero-Wear Patch (In Progress)
+- [ ] **Configurable Logging**: `log_level=0/1/2` in config (0=silent, 1=info, 2=debug)
+- [ ] **Debug Flag**: `-d/--debug` enables verbose logging for testing
+- [ ] **Foreground Mode**: `-f` flag for development (uses stderr, no daemonize)
+- [ ] **Reduced Boot Writes**: Batched startup logs (3→1 syslog call, 67% reduction)
+- [ ] **Quiet Production**: Default `log_level=0` eliminates SD writes from logging
+- [ ] **NTP Stability**: Replaced hot-path asserts with graceful error handling (prevents crashes on clock adjustments)
+- [ ] **SD Write Impact**: 1 write/boot + 0 runtime events (vs. 10-100/day in v1.0.0)
 
-### v1.1.0: Foundation (Planned)
+**Migration Note**: Add `log_level=0` to `/etc/touch-timeout.conf` for silent operation.  
+**Dev Tip**: Use `touch-timeout -df` for foreground debugging without config changes.
+
+### v1.1.0: Clean Foundation (Planned)
 - [ ] **Modular Architecture**: 3-file split (`logic.c/h`, `io.c/h`, `main.c`)
-- [ ] **Build System**: Makefile and Unit test suite with Makefile
+- [ ] **Unit Tests**: Makefile test target with edge-case coverage
+- [ ] **Config-Based Logging**: `log_level=none/info/debug` in `/etc/touch-timeout.conf` (replaces `-d` flag)
 - [ ] **Enhanced Dim Control**: Configurable `dim_brightness` (% of brightness, 5%-100%, min 10)
 - [ ] **Extended Dim Timeout**: Support 1%-100% of `off_timeout` (1s minimum)
 
-### v1.2.0: Universal Input Support (Planned)
-- [ ] **Auto-Detect Devices**: Scans `/dev/input/by-path/` for touch/keyboard/mouse (no manual config)
-- [ ] **USB Hotplug**: Detects devices added after boot via `inotify` (plug-and-play)
-- [ ] **Multi-Device Polling**: Monitor up to 10 input devices simultaneously
+### v1.2.0: Hotplug Foundation (Planned)
+- [ ] **USB Hotplug**: `inotify` monitoring for plug-and-play device detection
+- [ ] **Multi-Device Polling**: Support up to 10 input devices (static config list)
+- [ ] **Robust Event Loop**: Handle device add/remove during runtime
 
-### v1.3.0: Audio Integration (Proposed)
-- [ ] **Audio Activity Detection**: Optional PulseAudio/ALSA monitoring resets timeout during playback
-- [ ] **SSH Login Detection**: Prevent screen-off during remote sessions
+### v1.2.0: Hotplug Foundation (Planned)
+- [ ] **USB Hotplug**: `inotify` monitoring for plug-and-play device detection
+- [ ] **Multi-Device Polling**: Support up to 10 input devices (static config list)
+- [ ] **Robust Event Loop**: Handle device add/remove during runtime
+
+### v1.3.0: Universal Input (Planned)
+- [ ] **Keyboard/Mouse Support**: Monitor all input device types (not just touch)
+- [ ] **Auto-Discovery**: Scans `/dev/input/by-path/` on startup (zero config)
+- [ ] **Device Classification**: Filters by capability flags (touch vs keyboard vs mouse)
+
+### v1.4.0: Audio Integration (Proposed)
+- [ ] **Playback Detection**: Optional ALSA/PulseAudio activity resets timeout
+- [ ] **SSH Detection**: Prevent screen-off during remote sessions
 
 ## To build and deploy:
 see installation instructions (INSTALLATION.md)
