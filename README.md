@@ -41,7 +41,7 @@ Tested over 24+ hours continuous operation with no performance degradation.
 Edit `/etc/touch-timeout.conf`:
 
 ```ini
-brightness=150            # Active brightness (15-254, recommend ≤200 for RPi display)
+brightness=150            # Active brightness (15-255, recommend ≤200 for RPi display)
 off_timeout=300           # Seconds until screen off (minimum 10)
 dim_percent=50            # When to dim (10-100% of off_timeout)
 poll_interval=100         # Polling rate in ms (10-2000, recommend 50-1000)
