@@ -3,6 +3,7 @@
 #################
 
 # Build outputs
+bin/
 touch-timeout
 *.a
 
