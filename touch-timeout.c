@@ -3,7 +3,12 @@
  * ----------------
  * A lightweight touchscreen activity monitor optimized for Raspberry Pi 7" touchscreens.
  *
- * VERSION: 1.0.0
+ * VERSION: 1.0.1
+ *  
+ * Changes from 1.0.0:
+ *  - 
+ *
+ * 
  * 
  * Changes from 0.2.0:
  *  - Added assert() validation
@@ -60,7 +65,7 @@
 #define MAX_BRIGHTNESS_LIMIT 255    // Valid range: 0-255 (8-bit PWM duty cycle)
 #define SCREEN_OFF           0      // Brightness value for screen off
 #define CONFIG_PATH          "/etc/touch-timeout.conf"
-#define VERSION              "1.0.0"
+#define VERSION              "1.0.1"
 
 static volatile int running = 1;    // Used for graceful shutdown on SIGTERM/SIGINT
 

@@ -52,12 +52,16 @@ device=event0             # Touchscreen in /dev/input/
 
 ## Product Roadmap
 
-### v1.1.0: Foundation (In Progress)
-- [ ] **SD Longevity**: Conditional logging (`log_level=0/1/2` in config) eliminates writes
-- [ ] **Modular Architecture**: 3-file split (`logic.c/h`, `io.c/h`, `main.c`) with unit tests
+### v1.0.1: SD Longevity (In Progress)
+- [ ] **Conditional logging**: log_level=none/info/debug eliminates writes
+- [ ] --debug and --foreground modes
+- [ ] Remove non-essential logs
+
+### v1.1.0: Foundation (Planned)
+- [ ] **Modular Architecture**: 3-file split (`logic.c/h`, `io.c/h`, `main.c`)
+- [ ] **Build System**: Makefile and Unit test suite with Makefile
 - [ ] **Enhanced Dim Control**: Configurable `dim_brightness` (% of brightness, 5%-100%, min 10)
 - [ ] **Extended Dim Timeout**: Support 1%-100% of `off_timeout` (1s minimum)
-- [ ] **Build System**: Makefile with test target (`make test`)
 
 ### v1.2.0: Universal Input Support (Planned)
 - [ ] **Auto-Detect Devices**: Scans `/dev/input/by-path/` for touch/keyboard/mouse (no manual config)
