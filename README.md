@@ -52,14 +52,14 @@ device=event0             # Touchscreen in /dev/input/
 
 ## Product Roadmap
 
-### v1.0.1: Zero-Wear Patch (In Progress)
-- [ ] **Configurable Logging**: `log_level=0/1/2` in config (0=silent, 1=info, 2=debug)
-- [ ] **Debug Flag**: `-d/--debug` enables verbose logging for testing
-- [ ] **Foreground Mode**: `-f` flag for development (uses stderr, no daemonize)
-- [ ] **Reduced Boot Writes**: Batched startup logs (3→1 syslog call, 67% reduction)
-- [ ] **Quiet Production**: Default `log_level=0` eliminates SD writes from logging
-- [ ] **NTP Stability**: Replaced hot-path asserts with graceful error handling (prevents crashes on clock adjustments)
-- [ ] **SD Write Impact**: 1 write/boot + 0 runtime events (vs. 10-100/day in v1.0.0)
+### v1.0.1: Zero-Wear Patch (Released)
+- [x] **Configurable Logging**: `log_level=0/1/2` in config (0=silent, 1=info, 2=debug)
+- [x] **Debug Flag**: `-d/--debug` enables verbose logging for testing
+- [x] **Foreground Mode**: `-f` flag for development (uses stderr, no daemonize)
+- [x] **Reduced Boot Writes**: Batched startup logs (3→1 syslog call, 67% reduction)
+- [x] **Quiet Production**: Default `log_level=0` eliminates SD writes from logging
+- [x] **NTP Stability**: Replaced hot-path asserts with graceful error handling (prevents crashes on clock adjustments)
+- [x] **SD Write Impact**: 1 write/boot + 0 runtime events (vs. 10-100/day in v1.0.0)
 
 **Migration Note**: Add `log_level=0` to `/etc/touch-timeout.conf` for silent operation.  
 **Dev Tip**: Use `touch-timeout -df` for foreground debugging without config changes.
