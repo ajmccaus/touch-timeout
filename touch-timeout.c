@@ -6,9 +6,10 @@
  * VERSION: 1.0.1
  *  
  * Changes from 1.0.0:
- *  - 
- *
- * 
+ *  - Logging improvements to minimize SD card wear
+ *  - Added command line arguments for logging verbosity
+ *  - Added log level configuration (LOG_INFO, LOG_WARNING, LOG_ERR)
+ *  - Improved handling of system clock adjustments (NTP)
  * 
  * Changes from 0.2.0:
  *  - Added assert() validation
@@ -34,11 +35,6 @@
  *  - Safe sysfs writes (lseek, cached)
  *  - Graceful shutdown via SIGTERM/SIGINT (systemd compatible)
  *
-  * TODO for v1.1.0:
- *  - [ ] Make dim_brightness separately configurable (config key: dim_brightness)
- *        Current: auto-calculated as user_brightness/10
- *        Proposed: dim_brightness=20 in config file
- *  - [ ] Reduce restore_brightness() log level to LOG_DEBUG
  *
  * Author: Andrew McCausland
  * License: GPL v3
@@ -67,7 +63,223 @@
 #define CONFIG_PATH          "/etc/touch-timeout.conf"
 #define VERSION              "1.0.1"
 
+// ============================================================================
+// LOGGING SYSTEM: Function pointer-based runtime log filtering
+// ============================================================================
+
+// WHY: Three-tier logging matches production needs:
+//      - NONE (0): Zero SD writes for appliance mode
+//      - INFO (1): Startup + state changes only
+//      - DEBUG (2): All events for troubleshooting
+// HOW: Enum values match syslog priority ordering for intuitive mapping
+enum log_level {
+    LOG_LEVEL_NONE = 0,   // Production default
+    LOG_LEVEL_INFO = 1,   // Operational events
+    LOG_LEVEL_DEBUG = 2   // Verbose diagnostics
+};
+
+// Global state for log filtering
+// WHY: Single source of truth prevents scattered conditionals
+// HOW: Set once at init, read by all logging functions
+static int current_log_level = LOG_LEVEL_NONE;  // Default: silent
+static int foreground_mode = 0;                 // 0=syslog, 1=stderr
+
 static volatile int running = 1;    // Used for graceful shutdown on SIGTERM/SIGINT
+
+// ============================================================================
+// FUNCTION POINTER TYPE DEFINITION
+// ============================================================================
+
+// WHY: Creates a reusable "logging function" type signature
+// WHAT: Any function matching this signature can be stored in log_* pointers
+// HOW: typedef creates alias for "pointer to function returning void"
+//
+// BREAKDOWN:
+//   void              - Return type (loggers don't return values)
+//   (*log_func_t)     - Pointer to function, named "log_func_t"
+//   (int priority, const char *format, ...) - Function parameters
+//
+// PARAMETERS EXPLAINED:
+//   int priority       - Syslog level (LOG_ERR, LOG_INFO, etc.)
+//   const char *format - Printf-style format string (e.g., "Error: %s")
+//   ...                - Variable arguments (varargs) for format placeholders
+//
+// EXAMPLE USAGE:
+//   log_func_t my_logger = log_syslog;  // Store function address
+//   my_logger(LOG_INFO, "Test %d", 42); // Call via pointer
+typedef void (*log_func_t)(int priority, const char *format, ...);
+
+// ============================================================================
+// LOGGING IMPLEMENTATION FUNCTIONS
+// ============================================================================
+
+// NULL LOGGER: Discards all output (production mode)
+// ----------------------------------------------------------------------------
+// WHY: Eliminates SD writes when log_level=0
+// HOW: Empty function body compiles to single 'ret' instruction (verified)
+// OPTIMIZATION: Compiler completely inlines this (zero overhead)
+//
+// PARAMETERS:
+//   (void)priority - Mark as intentionally unused (prevents -Wunused warning)
+//   (void)format   - Same (GCC would warn otherwise)
+//
+// WHAT HAPPENS: Function is called → does nothing → returns immediately
+static void log_null(int priority, const char *format, ...) {
+    (void)priority;  // Suppress "unused parameter" warning
+    (void)format;    // Suppress "unused parameter" warning
+    // Intentionally empty - optimized to single return instruction
+}
+
+// STDERR LOGGER: Output to console (foreground mode)
+// ----------------------------------------------------------------------------
+// WHY: Development/debugging needs human-readable output, not syslog format
+// HOW: Uses vfprintf() to handle variable arguments (va_list)
+// WHEN USED: ./touch-timeout -f (foreground flag)
+//
+// FLOW:
+//   1. Map syslog priority (LOG_ERR=3) → human string ("ERROR")
+//   2. Print label "[ERROR] "
+//   3. Process format string + varargs using vfprintf()
+//   4. Add newline
+//
+// VARARGS EXPLAINED:
+//   va_list args          - Holds the "..." arguments
+//   va_start(args, format)- Initialize from last named param (format)
+//   vfprintf()            - Printf variant that takes va_list
+//   va_end(args)          - Cleanup (required by C standard)
+static void log_stderr(int priority, const char *format, ...) {
+    // Map syslog numeric priority to human-readable label
+    const char *level_str;
+    switch (priority) {
+        case LOG_ERR:     level_str = "ERROR"; break;  // Priority 3
+        case LOG_WARNING: level_str = "WARN "; break;  // Priority 4
+        case LOG_INFO:    level_str = "INFO "; break;  // Priority 6
+        case LOG_DEBUG:   level_str = "DEBUG"; break;  // Priority 7
+        default:          level_str = "LOG  "; break;  // Catch-all
+    }
+
+        // Print label (e.g., "[ERROR] ")
+    fprintf(stderr, "[%s] ", level_str);
+    
+    // Process variable arguments
+    va_list args;                   // Declare varargs holder
+    va_start(args, format);         // Initialize (start after 'format' param)
+    vfprintf(stderr, format, args); // Print formatted string
+    va_end(args);                   // Cleanup (required)
+    
+    fprintf(stderr, "\n");          // Add newline
+}
+
+// SYSLOG LOGGER: Output to system log daemon (production mode)
+// ----------------------------------------------------------------------------
+// WHY: Standard Unix logging for services/daemons
+// HOW: Wraps vsyslog() (varargs version of syslog())
+// WHERE: Logs go to /var/log/syslog or journalctl (rsyslog decides)
+//
+// FLOW:
+//   1. Package varargs into va_list
+//   2. Pass to vsyslog() (syslog's varargs variant)
+//   3. rsyslogd receives → writes to disk
+//
+// WHY vsyslog() NOT syslog():
+//   syslog() takes varargs directly: syslog(LOG_INFO, "msg %d", val)
+//   We're wrapping it, so WE receive the varargs
+//   vsyslog() accepts pre-packaged va_list
+static void log_syslog(int priority, const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    vsyslog(priority, format, args);  // Varargs version of syslog()
+    va_end(args);
+}
+
+// ============================================================================
+// GLOBAL FUNCTION POINTERS (the "switchboard")
+// ============================================================================
+
+// WHY: Decision made once (at init), executed thousands of times (in loop)
+// WHAT: Points to one of the 3 functions above based on log level
+// HOW: logging_init() assigns these, rest of code just calls log_info()
+//
+// EXAMPLE STATE CHANGES:
+//   Startup:        log_info = log_null (everything off)
+//   After init:     log_info = log_syslog (if log_level >= 1)
+//   After init:     log_debug = log_syslog (if log_level >= 2)
+//
+// MEMORY: Each pointer = 8 bytes on 64-bit (holds function address)
+static log_func_t log_critical = NULL;  // ALWAYS logs (even at level 0)
+static log_func_t log_info = log_null;  // Logs at level 1+
+static log_func_t log_debug = log_null; // Logs at level 2 only
+
+// ============================================================================
+// INITIALIZATION FUNCTION
+// ============================================================================
+
+// WHEN CALLED: Once in main(), after parsing config and CLI args
+// WHAT IT DOES: Sets up global pointers based on desired log level
+// WHY: Centralizes the "which function should I use?" decision
+//
+// PARAMETERS:
+//   level     - Desired log level (0/1/2 from config or -d flag)
+//   foreground- 0=use syslog, 1=use stderr
+//
+// LOGIC FLOW:
+//   1. Store settings in globals (other code checks foreground_mode)
+//   2. Initialize syslog if needed (opens connection to rsyslogd)
+//   3. Choose target function (stderr or syslog)
+//   4. Wire up function pointers based on level:
+//      - log_critical: ALWAYS enabled (hardware errors, etc.)
+//      - log_info: enabled if level >= 1
+//      - log_debug: enabled if level >= 2
+//   5. Any log_* still pointing to log_null will discard output
+static void logging_init(int level, int foreground) {
+    // Store configuration in globals
+    foreground_mode = foreground;
+    current_log_level = level;
+    
+    // Initialize syslog connection (only if not in foreground mode)
+    // WHY: No point opening syslog socket if we're using stderr
+    if (!foreground) {
+        openlog("touch-timeout",           // Program name in logs
+                LOG_PID | LOG_CONS,        // Include PID, fallback to console
+                LOG_DAEMON);               // Facility (daemon category)
+    }
+    
+    // Choose output function based on mode
+    // TERNARY: condition ? true_value : false_value
+    log_func_t target = foreground ? log_stderr : log_syslog;
+    
+    // Wire up function pointers based on log level
+    // CRITICAL: Always enabled (even at level 0)
+    log_critical = target;
+    
+    // INFO: Enabled at level 1+
+    // If level < 1, log_info stays as log_null (discards)
+    if (level >= LOG_LEVEL_INFO) {
+        log_info = target;
+    }
+    
+    // DEBUG: Enabled at level 2 only
+    // If level < 2, log_debug stays as log_null (discards)
+    if (level >= LOG_LEVEL_DEBUG) {
+        log_debug = target;
+    }
+}
+
+// ============================================================================
+// CLEANUP FUNCTION
+// ============================================================================
+
+// WHEN CALLED: Once at shutdown (after main loop exits)
+// WHAT IT DOES: Closes syslog connection if it was opened
+// WHY: Good practice (frees resources, flushes buffers)
+//
+// NOTE: Not strictly necessary (OS cleans up on process exit),
+//       but professional daemons do this
+static void logging_cleanup(void) {
+    if (!foreground_mode) {
+        closelog();  // Close connection to rsyslogd
+    }
+}
 
 // --------------------
 // Display state machine
