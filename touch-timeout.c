@@ -475,11 +475,11 @@ static int set_brightness(struct display_state *state, int brightness) {
     char buf[8];
     int len = snprintf(buf, sizeof(buf), "%d", brightness);
 
-    +    // Validate snprintf didn't fail or truncate
-+    if (len < 0 || len >= (int)sizeof(buf)) {
-+        // log_critical("Brightness value too large");
-+        return -1;
-+    }
+        // Validate snprintf didn't fail or truncate
+    if (len < 0 || len >= (int)sizeof(buf)) {
+        // log_critical("Brightness value too large");
+        return -1;
+    }
     // Reset file position for repeated writes to same sysfs file
     // POSIX requires checking lseek() return - can fail on special files
     if (lseek(state->bright_fd, 0, SEEK_SET) == -1) {
