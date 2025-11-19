@@ -53,8 +53,8 @@ device=event0             # Touchscreen in /dev/input/
 ## Product Roadmap
 
 ### v1.0.1: Zero-Wear Patch (In Progress)
-- [ ] **Configurable Logging**: `log_level=0/1/2` in config (0=silent, 1=info, 2=debug)
-- [ ] **Debug Flag**: `-d/--debug` enables verbose logging for testing
+- [X] **Configurable Logging**: `log_level=0/1/2` in config (0=silent, 1=info, 2=debug)
+- [X] **Debug Flag**: `-d/--debug` enables verbose logging for testing
 - [ ] **Foreground Mode**: `-f` flag for development (uses stderr, no daemonize)
 - [ ] **Reduced Boot Writes**: Batched startup logs (3→1 syslog call, 67% reduction)
 - [ ] **Quiet Production**: Default `log_level=0` eliminates SD writes from logging
