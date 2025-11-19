@@ -55,6 +55,7 @@
 #include <sys/types.h>
 #include <assert.h>
 #include <limits.h>
+#include <stdarg.h>
 
 #define MIN_BRIGHTNESS       15     // Minimum allowed brightness (avoids flicker)
 #define MIN_DIM_BRIGHTNESS   10     // Minimum allowed dim level
