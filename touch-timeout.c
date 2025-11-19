@@ -40,6 +40,9 @@
  * License: GPL v3
  */
 
+ // Request POSIX.1-2008 API before including any system headers
+#define _POSIX_C_SOURCE 200809L
+
 #include <stdio.h>
 #include <unistd.h>
 #include <errno.h>
