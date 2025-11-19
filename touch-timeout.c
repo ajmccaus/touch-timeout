@@ -587,8 +587,6 @@ int main(int argc, char *argv[]) {
                 &poll_interval, &dim_percent);
 
     // Command-line args override config (if provided)
-    //if (argc > 1) user_brightness = atoi(argv[1]);
-    //if (argc > 2) off_timeout = atoi(argv[2]);
     if (argc > 1) {
         if (safe_atoi(argv[1], &user_brightness) != 0) {
             syslog(LOG_ERR, "Invalid brightness argument: %s", argv[1]);
