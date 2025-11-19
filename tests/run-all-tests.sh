@@ -5,7 +5,7 @@
 set -e
 
 echo "[*] Compiling touch-timeout..."
-gcc -O2 -Wall -Wextra -Werror -std=c99 -pedantic -o bin/touch-timeout touch-timeout.c
+gcc -O2 -Wall -Wextra -Werror -std=c99 -pedantic -o bin/touch-timeout ../touch-timeout.c
 
 echo "[*] Setting up test fixtures..."
 bash test-setup.sh

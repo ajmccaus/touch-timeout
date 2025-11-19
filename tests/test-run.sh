@@ -5,9 +5,9 @@
 
 set -e
 
-BINARY="./touch-timeout"
-TEST_DIR="./tests"
-RESULTS_DIR="./tests/test-results"
+BINARY="./bin/touch-timeout"
+TEST_DIR="./test-files"
+RESULTS_DIR="./test-results"
 
 # Colors for output
 RED='\033[0;31m'
@@ -18,7 +18,7 @@ NC='\033[0m' # No Color
 # Ensure binary exists
 if [ ! -f "$BINARY" ]; then
     echo -e "${RED}[!] Binary not found: $BINARY${NC}"
-    echo "Compile with: gcc -O2 -Wall -Wextra -Werror -std=c99 -pedantic -o bin/touch-timeout touch-timeout.c"
+    echo "Compile with: gcc -O2 -Wall -Wextra -Werror -std=c99 -pedantic -o bin/touch-timeout ../touch-timeout.c"
     exit 1
 fi
 
