@@ -41,9 +41,11 @@
  */
 
  // Request POSIX.1-2008 API before including any system headers
+#define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200809L
 
 #include <stdio.h>
+#include <stdarg.h>
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -58,7 +60,6 @@
 #include <sys/types.h>
 #include <assert.h>
 #include <limits.h>
-#include <stdarg.h>
 
 #define MIN_BRIGHTNESS       15     // Minimum allowed brightness (avoids flicker)
 #define MIN_DIM_BRIGHTNESS   10     // Minimum allowed dim level
@@ -408,7 +409,7 @@ static void load_config(const char *path, int *brightness, int *timeout,
 // Read max_brightness from sysfs
 // --------------------
 static int get_max_brightness(const char *backlight) {
-    char path[128];
+    char path[PATH_MAX];  // 4kB path limit, generous buffer, no overflow
     snprintf(path, sizeof(path), "/sys/class/backlight/%s/max_brightness", backlight);
     
     int fd = open(path, O_RDONLY);
@@ -473,16 +474,24 @@ static int set_brightness(struct display_state *state, int brightness) {
 
     char buf[8];
     int len = snprintf(buf, sizeof(buf), "%d", brightness);
+
+    +    // Validate snprintf didn't fail or truncate
++    if (len < 0 || len >= (int)sizeof(buf)) {
++        // log_critical("Brightness value too large");
++        return -1;
++    }
     // Reset file position for repeated writes to same sysfs file
     // POSIX requires checking lseek() return - can fail on special files
     if (lseek(state->bright_fd, 0, SEEK_SET) == -1) {
         syslog(LOG_ERR, "lseek failed: %s", strerror(errno));
         return -1;
     }
-    int ret = write(state->bright_fd, buf, len);
+
+    // Use correct type for write() return and cast len to size_t
+    ssize_t ret = write(state->bright_fd, buf, (size_t)len);
     // fsync(state->bright_fd);  // REMOVED: sysfs writes are synchronous
     
-    if (ret != len) {
+    if (ret != (ssize_t)len) {
         syslog(LOG_ERR, "Failed to set brightness: %s", strerror(errno));
         return -1;
     }
@@ -555,15 +564,21 @@ static void check_timeouts(struct display_state *state) {
 // Main entry point
 // --------------------
 int main(int argc, char *argv[]) {
+    ///////////////////////////////////////////////////////////
+    // Suppress warnings for unused functions TO BE FIXED LATER
+    (void)logging_init;    
+    (void)logging_cleanup;
+    ///////////////////////////////////////////////////////////
+
     openlog("touch-timeout", LOG_PID | LOG_CONS, LOG_DAEMON);
 
     // Default values (will be overridden by config or CLI)
     int user_brightness = 100;
     int off_timeout = 300;
-    char backlight[64] = "rpi_backlight";
-    char input_dev[64] = "event0";
-    int poll_interval = 100;        // Default 100ms (recommended: 50-1000ms)
-    int dim_percent = 50;            // Default 50% of off_timeout
+    char backlight[NAME_MAX + 1] = "rpi_backlight";  // 256 bytes (filename size)
+    char input_dev[NAME_MAX + 1] = "event0";         // 256 bytes (filename size)
+    int poll_interval = 100;                         // Default 100ms (recommended: 50-1000ms)
+    int dim_percent = 50;                            // Default 50% of off_timeout
 
     // Load config from /etc/touch-timeout.conf (if present)
     load_config(CONFIG_PATH, &user_brightness, &off_timeout,
@@ -640,7 +655,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Open brightness control file (O_RDWR for reading initial state)
-    char bright_path[128];
+    char bright_path[PATH_MAX];  // 4kB path limit, generous buffer, no overflow
     snprintf(bright_path, sizeof(bright_path),
              "/sys/class/backlight/%s/brightness", backlight);
     int bright_fd = open(bright_path, O_RDWR);
@@ -670,7 +685,7 @@ int main(int argc, char *argv[]) {
     };
 
     // Open touchscreen input device
-    char dev_path[64];
+    char dev_path[PATH_MAX];  // 4kB path limit, generous buffer, no overflow
     snprintf(dev_path, sizeof(dev_path), "/dev/input/%s", input_dev);
     int event_fd = open(dev_path, O_RDONLY | O_NONBLOCK);
     if (event_fd == -1) {
