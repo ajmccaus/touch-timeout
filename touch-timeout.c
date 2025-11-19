@@ -85,7 +85,7 @@ enum log_level {
 static int current_log_level = LOG_LEVEL_NONE;  // Default: silent
 static int foreground_mode = 0;                 // 0=syslog, 1=stderr
 
-static volatile int running = 1;    // Used for graceful shutdown on SIGTERM/SIGINT
+static volatile sig_atomic_t running = 1;    // Used for graceful shutdown on SIGTERM/SIGINT, Signal-safe flag used by handler
 
 // ============================================================================
 // FUNCTION POINTER TYPE DEFINITION
