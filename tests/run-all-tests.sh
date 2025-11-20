@@ -1,5 +1,5 @@
 #!/bin/bash
-# filepath: /home/user/projects/touch-timeout/run-all-tests.sh
+# filepath: /home/user/projects/touch-timeout/tests/run-all-tests.sh
 # Complete test setup, compile, and run
 
 set -e

@@ -12,6 +12,7 @@ touch-timeout
 *.swp
 *.swo
 *~
+tmp/
 
 # System
 .DS_Store

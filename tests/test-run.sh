@@ -5,9 +5,9 @@
 
 set -e
 
-BINARY="./bin/touch-timeout"
-TEST_DIR="./test-files"
-RESULTS_DIR="./test-results"
+BINARY="bin/touch-timeout"
+TEST_DIR="test-files/"
+RESULTS_DIR="tmp/results/"
 
 # Colors for output
 RED='\033[0;31m'

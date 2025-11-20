@@ -5,7 +5,7 @@
 
 set -e
 
-TEST_DIR="./test-files"
+TEST_DIR="tmp/"
 mkdir -p "$TEST_DIR"
 
 echo "[*] Setting up test fixtures in $TEST_DIR..."

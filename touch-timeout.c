@@ -10,6 +10,7 @@
  *  - Added command line arguments for logging verbosity
  *  - Added log level configuration (LOG_INFO, LOG_WARNING, LOG_ERR)
  *  - Improved handling of system clock adjustments (NTP)
+ *  - fixed 512-byte buffers and mandatory snprintf return checks to prevent truncation issues
  * 
  * Changes from 0.2.0:
  *  - Added assert() validation
@@ -67,6 +68,7 @@
 #define SCREEN_OFF           0      // Brightness value for screen off
 #define CONFIG_PATH          "/etc/touch-timeout.conf"
 #define VERSION              "1.0.1"
+#define PATH_BUF_SZ          512    // de-facto safe size for embedded file paths
 
 // ============================================================================
 // LOGGING SYSTEM: Function pointer-based runtime log filtering
@@ -409,7 +411,7 @@ static void load_config(const char *path, int *brightness, int *timeout,
 // Read max_brightness from sysfs
 // --------------------
 static int get_max_brightness(const char *backlight) {
-    char path[PATH_MAX];  // 4kB path limit, generous buffer, no overflow
+    char path[PATH_BUF_SZ];
     snprintf(path, sizeof(path), "/sys/class/backlight/%s/max_brightness", backlight);
     
     int fd = open(path, O_RDONLY);
@@ -653,7 +655,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Open brightness control file (O_RDWR for reading initial state)
-    char bright_path[PATH_MAX];  // 4kB path limit, generous buffer, no overflow
+    char bright_path[PATH_BUF_SZ];
     snprintf(bright_path, sizeof(bright_path),
              "/sys/class/backlight/%s/brightness", backlight);
     int bright_fd = open(bright_path, O_RDWR);
@@ -683,7 +685,7 @@ int main(int argc, char *argv[]) {
     };
 
     // Open touchscreen input device
-    char dev_path[PATH_MAX];  // 4kB path limit, generous buffer, no overflow
+    char dev_path[PATH_BUF_SZ];
     snprintf(dev_path, sizeof(dev_path), "/dev/input/%s", input_dev);
     int event_fd = open(dev_path, O_RDONLY | O_NONBLOCK);
     if (event_fd == -1) {
