@@ -352,16 +352,19 @@ static int safe_atoi(const char *str, int *result) {
 //   device=event0
 //   poll_interval=100
 //   dim_percent=50
+//   log_level=0   
 // --------------------
 static void load_config(const char *path, int *brightness, int *timeout,
-                        char *backlight, size_t bl_sz,
-                        char *device, size_t dev_sz,
-                        int *poll_interval, int *dim_percent) {
+                        char *backlight, size_t bl_sz, 
+                        char *device, size_t dev_sz, 
+                        int *poll_interval, int *dim_percent, 
+                        int *log_level) {
     FILE *f = fopen(path, "r");
     if (!f) return; // No config file found — just skip
 
     char line[128];
     int line_num = 0;
+
     while (fgets(line, sizeof(line), f)) {
         line_num++;
         trim(line);
@@ -370,7 +373,8 @@ static void load_config(const char *path, int *brightness, int *timeout,
 
         char key[64], value[64];
         if (sscanf(line, "%63[^=]=%63s", key, value) == 2) {
-            trim(key); trim(value);
+            trim(key); 
+            trim(value);
             
             int tmp;
             if (strcmp(key, "brightness") == 0) {
@@ -387,6 +391,7 @@ static void load_config(const char *path, int *brightness, int *timeout,
             // 3. Returns chars written (useful for overflow detection)
             // 4. More secure - CERT C Coding Standard recommends snprintf() over strncpy()
             else if (strcmp(key, "backlight") == 0)
+                // Use snprintf for safe, null-terminated string copying (POSIX best practice)
                 snprintf(backlight, bl_sz, "%s", value);  // Always null-terminates
             else if (strcmp(key, "device") == 0)
                 snprintf(device, dev_sz, "%s", value);    // Always null-terminates
@@ -398,11 +403,15 @@ static void load_config(const char *path, int *brightness, int *timeout,
                 if (safe_atoi(value, &tmp) == 0) *dim_percent = tmp;
                 else syslog(LOG_WARNING, "Invalid dim_percent '%s' at line %d", value, line_num);
             }
-            else
-                syslog(LOG_WARNING, "Unknown config key '%s' at line %d", key, line_num);
-        } else {
-            syslog(LOG_WARNING, "Malformed config line %d: %s", line_num, line);
-        }
+            else if (strcmp(key, "log_level") == 0) {
+                // Bounds check for log_level (0-2) based on roadmap definitio
+                if (safe_atoi(value, &tmp) == 0 && tmp >= 0 && tmp <= 2) *log_level = tmp;
+                else syslog(LOG_WARNING, "Invalid log_level '%s' at line %d (valid: 0-2)", value, line_num); 
+            } 
+            else syslog(LOG_WARNING, "Unknown config key '%s' at line %d", key, line_num);
+            
+        } 
+        else syslog(LOG_WARNING, "Malformed config line %d: %s", line_num, line);
     }
     fclose(f);
 }
@@ -577,16 +586,19 @@ int main(int argc, char *argv[]) {
     // Default values (will be overridden by config or CLI)
     int user_brightness = 100;
     int off_timeout = 300;
-    char backlight[NAME_MAX + 1] = "rpi_backlight";  // 256 bytes (filename size)
-    char input_dev[NAME_MAX + 1] = "event0";         // 256 bytes (filename size)
-    int poll_interval = 100;                         // Default 100ms (recommended: 50-1000ms)
-    int dim_percent = 50;                            // Default 50% of off_timeout
+    // Buffers sized for POSIX NAME_MAX + NUL terminator
+    char backlight[NAME_MAX + 1] = "rpi_backlight"; 
+    char input_dev[NAME_MAX + 1] = "event0";         
+    int poll_interval = 100;   // Default 100ms (recommended: 50-1000ms)
+    int dim_percent = 50;      // Default 50% of off_timeout
+    int config_log_level = LOG_LEVEL_NONE; // Default to silent (config can override)
 
     // Load config from /etc/touch-timeout.conf (if present)
     load_config(CONFIG_PATH, &user_brightness, &off_timeout,
                 backlight, sizeof(backlight),
                 input_dev, sizeof(input_dev),
-                &poll_interval, &dim_percent);
+                &poll_interval, &dim_percent,
+                &config_log_level);
 
     // Command-line args override config (if provided)
     if (argc > 1) {
