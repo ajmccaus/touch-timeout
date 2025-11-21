@@ -64,6 +64,14 @@ device=event0             # Touchscreen in /dev/input/
 **Migration Note**: Add `log_level=0` to `/etc/touch-timeout.conf` for silent operation.  
 **Dev Tip**: Use `touch-timeout -df` for foreground debugging without config changes.
 
+### v1.0.2: Struct Consolidation Prep (Planned)
+- [ ] **Typed Enums**: Replace internal `enum display_state_enum` with `display_state_e` typedef  
+- [ ] **State Struct Update**: Adopt new `display_state_t` with grouped brightness/time/state fields  
+- [ ] **Context Struct**: Introduce `app_ctx_t` to consolidate globals and reduce signature clutter  
+- [ ] **Operator Tables**: Group function pointers into `log_ops_t`, `io_ops_t`, and similar structs  
+- [ ] **Naming Consistency**: Apply `_t` suffix and namespace discipline across all new types  
+- [ ] **Refactor Safety**: Ensure all variables/constants live in well-defined modules preparing for v1.1.0 architecture split
+
 ### v1.1.0: Clean Foundation (Planned)
 - [ ] **Modular Architecture**: 3-file split (`logic.c/h`, `io.c/h`, `main.c`)
 - [ ] **Unit Tests**: Makefile test target with edge-case coverage
