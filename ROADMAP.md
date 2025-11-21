@@ -51,8 +51,8 @@ Prepare the codebase for the 1.1.0 architecture split by consolidating state, gr
 
 | Item | Before | After | Benefit |
 |------|--------|--------|---------|
-| **Display State Enum** | `enum display_state_enum { STATE_FULL, ... }` | ```typedef enum display_state_e {    DISPLAY_STATE_FULL = 0,    DISPLAY_STATE_DIMMED = 1,    DISPLAY_STATE_OFF = 2} display_state_e;``` | Namespaced, explicit type, less risk of collisions |
-| **Display State Struct** | `struct display_state { ... }` | ```typedef struct display_state {    int                bright_fd;    int                user_brightness;    int                dim_brightness;    int                current_brightness;    int                dim_timeout;    int                off_timeout;    time_t             last_input;    display_state_e     state;} display_state_t;``` | Strong typing, consistent suffix `_t`, prepares for modularization |
+| **Display State Enum** | `enum display_state_enum { STATE_FULL, ... }` | ```typedef enum display_state_e { DISPLAY_STATE_FULL = 0, ... } display_state_e;``` | Namespaced, explicit type, less risk of collisions |
+| **Display State Struct** | `struct display_state { ... }` | ```typedef struct display_state { ...    display_state_e     state;} display_state_t;``` | Strong typing, consistent suffix `_t`, prepares for modularization |
 | **Logging Functions** | 3 loose function pointers | `typedef struct log_ops { log_func_t critical; log_func_t info; log_func_t debug; } log_ops_t;` | Easier injection, smaller signatures, mocking for tests |
 | **I/O Operations** | Hard-coded sysfs + input I/O | `typedef struct io_ops { int (*set_brightness)(); int (*get_brightness)(); int (*read_event)(); } io_ops_t;` | Enables fake providers for tests |
 | **Global State** | Many spread-out globals | `typedef struct app_ctx { display_state_t disp; log_ops_t log; io_ops_t io; int poll_interval; int running; } app_ctx_t;` | Provides a clean path to 1.1.0 modular design |
