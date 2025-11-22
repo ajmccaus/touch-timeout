@@ -213,7 +213,7 @@ static void log_syslog(int priority, const char *format, ...) {
 //   After init:     log_debug = log_syslog (if log_level >= 2)
 //
 // MEMORY: Each pointer = 8 bytes on 64-bit (holds function address)
-static log_func_t log_critical = NULL;  // ALWAYS logs (even at level 0)
+static log_func_t log_critical = log_syslog;  // ALWAYS logs (safe default)
 static log_func_t log_info = log_null;  // Logs at level 1+
 static log_func_t log_debug = log_null; // Logs at level 2 only
 
@@ -256,7 +256,7 @@ static void logging_init(int level, int foreground) {
     log_func_t target = foreground ? log_stderr : log_syslog;
     
     // Wire up function pointers based on log level
-    // CRITICAL: Always enabled (even at level 0)
+    // CRITICAL: Overrides safe default, respects foreground flag
     log_critical = target;
     
     // INFO: Enabled at level 1+
@@ -575,23 +575,62 @@ static void check_timeouts(struct display_state *state) {
 // Main entry point
 // --------------------
 int main(int argc, char *argv[]) {
-    ///////////////////////////////////////////////////////////
-    // Suppress warnings for unused functions TO BE FIXED LATER
-    (void)logging_init;    
-    (void)logging_cleanup;
-    ///////////////////////////////////////////////////////////
 
+    // Initialize syslog for early logging (before config parsing)
     openlog("touch-timeout", LOG_PID | LOG_CONS, LOG_DAEMON);
+
+    // ========================================================================
+    // COMMAND-LINE ARGUMENT PARSING
+    // ========================================================================
+    // WHY: Parse flags BEFORE logging init so CLI overrides config
+    // WHAT: -d (debug), -f (foreground), -h (help)
+    // HOW: getopt() consumes flags; argv/argc adjusted afterward
+
+    int opt;
+    int cli_log_level = -1;  // -1 means "not set by CLI"
+    int cli_foreground = 0;  // Local copy - DON'T touch global until logging_init
+
+    while ((opt = getopt(argc, argv, "dfh")) != -1) {
+        switch (opt) {
+            case 'd':
+                cli_log_level = LOG_LEVEL_DEBUG;
+                break;
+            case 'f':
+                cli_foreground = 1;  // ← FIX: Set local, not global
+                break;
+            case 'h':
+                fprintf(stderr, "Usage: %s [-d] [-f] [-h] [brightness] [timeout] [backlight] [device]\n",
+                        argv[0]);
+                fprintf(stderr, "\nOptions:\n");
+                fprintf(stderr, "  -d          Enable debug logging (overrides config file)\n");
+                fprintf(stderr, "  -f          Run in foreground (log to stderr, not syslog)\n");
+                fprintf(stderr, "  -h          Show this help message\n");
+                fprintf(stderr, "\nPositional arguments (CLI overrides config):\n");
+                fprintf(stderr, "  brightness  Display brightness (15-255, recommend ≤200)\n");
+                fprintf(stderr, "  timeout     Seconds before screen off (≥10)\n");
+                fprintf(stderr, "  backlight   Backlight device (default: rpi_backlight)\n");
+                fprintf(stderr, "  device      Input device (default: event0)\n");
+                fprintf(stderr, "\nConfig file: /etc/touch-timeout.conf\n");
+                fprintf(stderr, "Version: %s\n", VERSION);
+                return 0;
+            default:
+                fprintf(stderr, "Error: Invalid option. Use -h for help.\n");
+                return 1;
+        }
+    }
+
+    // Shift positional arguments after getopt()
+    argc -= optind;
+    argv += optind;
 
     // Default values (will be overridden by config or CLI)
     int user_brightness = 100;
     int off_timeout = 300;
-    // Buffers sized for POSIX NAME_MAX + NUL terminator
     char backlight[NAME_MAX + 1] = "rpi_backlight"; 
     char input_dev[NAME_MAX + 1] = "event0";         
-    int poll_interval = 100;   // Default 100ms (recommended: 50-1000ms)
-    int dim_percent = 50;      // Default 50% of off_timeout
-    int config_log_level = LOG_LEVEL_NONE; // Default to silent (config can override)
+    int poll_interval = 100;
+    int dim_percent = 50;
+    int config_log_level = LOG_LEVEL_NONE;
 
     // Load config from /etc/touch-timeout.conf (if present)
     load_config(CONFIG_PATH, &user_brightness, &off_timeout,
@@ -600,90 +639,95 @@ int main(int argc, char *argv[]) {
                 &poll_interval, &dim_percent,
                 &config_log_level);
 
-    // Command-line args override config (if provided)
-    if (argc > 1) {
-        if (safe_atoi(argv[1], &user_brightness) != 0) {
-            syslog(LOG_ERR, "Invalid brightness argument: %s", argv[1]);
-            exit(EXIT_FAILURE);
-        }
-    }
-    if (argc > 2) {
-        if (safe_atoi(argv[2], &off_timeout) != 0) {
-            syslog(LOG_ERR, "Invalid timeout argument: %s", argv[2]);
-            exit(EXIT_FAILURE);
-        }
-    }
-    if (argc > 3) strncpy(backlight, argv[3], sizeof(backlight) - 1);
-    if (argc > 4) strncpy(input_dev, argv[4], sizeof(input_dev) - 1);
+    // ========================================================================
+    // LOGGING INITIALIZATION
+    // ========================================================================
+    int final_log_level = (cli_log_level >= 0) ? cli_log_level : config_log_level;
+    logging_init(final_log_level, cli_foreground);  // ← Sets global foreground_mode here
 
-    // Validate poll_interval (hardware limits: 10ms to 2000ms)
-    // Recommended: 50-1000ms for balance of responsiveness and efficiency
+    // ========================================================================
+    // POSITIONAL ARGUMENTS
+    // ========================================================================
+    if (argc > 0) {
+        if (safe_atoi(argv[0], &user_brightness) != 0) {
+            log_critical(LOG_ERR, "Invalid brightness argument: %s", argv[0]);
+            exit(EXIT_FAILURE);
+        }
+    }
+    if (argc > 1) {
+        if (safe_atoi(argv[1], &off_timeout) != 0) {
+            log_critical(LOG_ERR, "Invalid timeout argument: %s", argv[1]);
+            exit(EXIT_FAILURE);
+        }
+    }
+    if (argc > 2) snprintf(backlight, sizeof(backlight), "%s", argv[2]);
+    if (argc > 3) snprintf(input_dev, sizeof(input_dev), "%s", argv[3]);
+
+    // Validate poll_interval
     if (poll_interval < 10 || poll_interval > 2000) {
-        syslog(LOG_WARNING, "Invalid poll_interval %dms (valid: 10-2000), using default 100ms", poll_interval);
+        log_info(LOG_WARNING, "Invalid poll_interval %dms (valid: 10-2000), using default 100ms", poll_interval);
         poll_interval = 100;
     }
 
-    // Validate dim_percent (10-100%)
+    // Validate dim_percent
     if (dim_percent < 10 || dim_percent > 100) {
-        syslog(LOG_WARNING, "Invalid dim_percent %d%% (valid: 10-100), using default 50%%", dim_percent);
+        log_info(LOG_WARNING, "Invalid dim_percent %d%% (valid: 10-100), using default 50%%", dim_percent);
         dim_percent = 50;
     }
 
     // Read and validate max_brightness
-    // NOTE: For RPi official 7" touchscreen, max brightness and current draw verified
-    // at 200 by forum users. Values 201-255 may decrease brightness on some displays
-    // due to hardware quirks, but protocol supports full 0-255 range.
-    // Recommend setting brightness ≤200 for this display.
     int max_brightness = get_max_brightness(backlight);
-    syslog(LOG_INFO, "Max brightness for %s: %d (recommend ≤200 for RPi 7\" display)", 
+    log_info(LOG_INFO, "Max brightness for %s: %d (recommend ≤200 for RPi 7\" display)", 
            backlight, max_brightness);
 
     // Validate and clamp user_brightness
     if (user_brightness < MIN_BRIGHTNESS) {
-        syslog(LOG_WARNING, "Brightness %d below minimum, using %d", user_brightness, MIN_BRIGHTNESS);
+        log_info(LOG_WARNING, "Brightness %d below minimum, using %d", user_brightness, MIN_BRIGHTNESS);
         user_brightness = MIN_BRIGHTNESS;
     }
     if (user_brightness > max_brightness) {
-        syslog(LOG_WARNING, "Brightness %d exceeds max, clamping to %d", user_brightness, max_brightness);
+        log_info(LOG_WARNING, "Brightness %d exceeds max, clamping to %d", user_brightness, max_brightness);
         user_brightness = max_brightness;
     }
 
     // Validate off_timeout
     if (off_timeout < 10) {
-        syslog(LOG_ERR, "Timeout must be >= 10s");
+        log_critical(LOG_ERR, "Timeout must be >= 10s");
         exit(EXIT_FAILURE);
     }
 
-    // Calculate dim_timeout from percentage
+    // Calculate dim_timeout
     int dim_timeout = (off_timeout * dim_percent) / 100;
-    
-    // Catches: Arithmetic overflow or invalid config combinations
     assert(dim_timeout > 0 && dim_timeout <= off_timeout);
-    // Catches: Validation bypass allowing out-of-range brightness
     assert(user_brightness >= MIN_BRIGHTNESS && user_brightness <= max_brightness);
   
     if (dim_percent == 100) {
-        syslog(LOG_INFO, "Dimming disabled (dim_percent=100%%)");
+        log_info(LOG_INFO, "Dimming disabled (dim_percent=100%%)");
     }
 
-    // Open brightness control file (O_RDWR for reading initial state)
+    // Open brightness control file
     char bright_path[PATH_BUF_SZ];
-    snprintf(bright_path, sizeof(bright_path),
+    int ret = snprintf(bright_path, sizeof(bright_path),
              "/sys/class/backlight/%s/brightness", backlight);
+    if (ret < 0 || ret >= (int)sizeof(bright_path)) {
+        log_critical(LOG_ERR, "Brightness path too long for backlight '%s'", backlight);
+        exit(EXIT_FAILURE);
+    }
+    
     int bright_fd = open(bright_path, O_RDWR);
     if (bright_fd == -1) {
-        syslog(LOG_ERR, "Error opening %s: %s", bright_path, strerror(errno));
+        log_critical(LOG_ERR, "Error opening %s: %s", bright_path, strerror(errno));
         exit(EXIT_FAILURE);
     }
 
-    // Read initial brightness from hardware
+    // Read initial brightness
     int initial_brightness = read_brightness(bright_fd);
     if (initial_brightness < 0) {
-        syslog(LOG_WARNING, "Cannot read current brightness, assuming %d", user_brightness);
+        log_info(LOG_WARNING, "Cannot read current brightness, assuming %d", user_brightness);
         initial_brightness = user_brightness;
     }
 
-    // Initialize display state structure
+    // Initialize state
     struct display_state state = {
         .bright_fd = bright_fd,
         .user_brightness = user_brightness,
@@ -696,61 +740,65 @@ int main(int argc, char *argv[]) {
         .state = STATE_FULL
     };
 
-    // Open touchscreen input device
+    // Open input device
     char dev_path[PATH_BUF_SZ];
-    snprintf(dev_path, sizeof(dev_path), "/dev/input/%s", input_dev);
+    ret = snprintf(dev_path, sizeof(dev_path), "/dev/input/%s", input_dev);
+    if (ret < 0 || ret >= (int)sizeof(dev_path)) {
+        log_critical(LOG_ERR, "Device path too long for device '%s'", input_dev);
+        close(state.bright_fd);
+        exit(EXIT_FAILURE);
+    }
+    
     int event_fd = open(dev_path, O_RDONLY | O_NONBLOCK);
     if (event_fd == -1) {
-        syslog(LOG_ERR, "Error opening %s: %s", dev_path, strerror(errno));
+        log_critical(LOG_ERR, "Error opening %s: %s", dev_path, strerror(errno));
         close(state.bright_fd);
         exit(EXIT_FAILURE);
     }
 
     // Set initial brightness
     if (set_brightness(&state, user_brightness) != 0) {
-        syslog(LOG_ERR, "Failed to set initial brightness");
+        log_critical(LOG_ERR, "Failed to set initial brightness");
         close(state.bright_fd);
         close(event_fd);
         exit(EXIT_FAILURE);
     }
 
-    syslog(LOG_INFO, "Started v"VERSION": brightness=%d, dim=%d (%d%% @ %ds), off=%ds, poll=%dms",
+    log_info(LOG_INFO, "Started v"VERSION": brightness=%d, dim=%d (%d%% @ %ds), off=%ds, poll=%dms",
            state.user_brightness, state.dim_brightness, dim_percent, 
            state.dim_timeout, state.off_timeout, poll_interval);
 
-    // Graceful shutdown handling
+    // Graceful shutdown
     signal(SIGTERM, handle_signal);
     signal(SIGINT, handle_signal);
 
-    // Poll loop for touchscreen input events
+    // Main loop
     struct pollfd pfd = {.fd = event_fd, .events = POLLIN};
     struct input_event event;
 
     while (running) {
-        int ret = poll(&pfd, 1, poll_interval);
+        int poll_ret = poll(&pfd, 1, poll_interval);
 
-        if (ret > 0 && (pfd.revents & POLLIN)) {
-            // Read all queued events
+        if (poll_ret > 0 && (pfd.revents & POLLIN)) {
             while (read(event_fd, &event, sizeof(event)) > 0) {
                 if (event.type == EV_KEY || event.type == EV_ABS) {
-                    // Any touch resets timeout or restores screen
                     if (state.state != STATE_FULL)
                         restore_brightness(&state);
                     else
                         state.last_input = time(NULL);
                 }
             }
-        } else if (ret < 0 && errno != EINTR) {
-            syslog(LOG_ERR, "Poll error: %s", strerror(errno));
+        } else if (poll_ret < 0 && errno != EINTR) {
+            log_critical(LOG_ERR, "Poll error: %s", strerror(errno));
         }
 
         check_timeouts(&state);
     }
 
-    // Cleanup on shutdown
-    syslog(LOG_INFO, "Stopping touch-timeout service...");
+    // Cleanup
+    log_info(LOG_INFO, "Stopping touch-timeout service...");
     close(state.bright_fd);
     close(event_fd);
-    closelog();
+    logging_cleanup();
     return 0;
 }
