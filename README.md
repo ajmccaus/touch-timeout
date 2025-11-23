@@ -8,7 +8,7 @@ Lightweight touchscreen backlight manager for Raspberry Pi 7" displays. Automati
 - **Power efficient**: <0.1% CPU usage during idle
 - **Hardware-optimized**: Respects display max brightness, prevents flicker
 - **Robust**: Handles missed poll cycles, system suspend/resume
-- **Production-ready**: Systemd integration with graceful shutdown
+- Systemd integration with graceful shutdown
 
 ## Behavior
 
