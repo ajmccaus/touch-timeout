@@ -844,7 +844,7 @@ int main(int argc, char *argv[]) {
     // WHY: Validate off_timeout, enforce minimum, handle gracefully   
     if (off_timeout < MIN_OFF_TIMEOUT) {
         log_info(LOG_WARNING, "off_timeout must be >= %d, clamping to %d", MIN_OFF_TIMEOUT, MIN_OFF_TIMEOUT);
-        off_timeout = MAX_OFF_TIMEOUT;
+        off_timeout = MIN_OFF_TIMEOUT;
     }
 
     // v1.0.1 CHANGE 24b: Add off_timeout maximum enforcement
