@@ -3,10 +3,14 @@
  * ----------------
  * A lightweight touchscreen activity monitor optimized for Raspberry Pi 7" touchscreens.
  *
- * VERSION: 1.0.1
- *  
- * Changes from 1.0.0:
- *  - 
+ * VERSION: 1.0.2
+ *
+ * Changes from 1.0.1:
+ *  - CERT SIG31-C: Use sig_atomic_t for signal handler flag
+ *  - CERT INT32-C: Fix integer overflow in dim_timeout calculation
+ *  - CERT INT31-C: Validate numeric ranges in load_config()
+ *  - CERT FIO32-C: Add path traversal protection for device/backlight
+ *  - CERT ERR06-C: Replace assert() with graceful error handling
  *
  * 
  * 
@@ -57,17 +61,17 @@
 #include <syslog.h>
 #include <ctype.h>
 #include <sys/types.h>
-#include <assert.h>
 #include <limits.h>
+#include <stdint.h>  // For sig_atomic_t portability
 
 #define MIN_BRIGHTNESS       15     // Minimum allowed brightness (avoids flicker)
 #define MIN_DIM_BRIGHTNESS   10     // Minimum allowed dim level
 #define MAX_BRIGHTNESS_LIMIT 255    // Valid range: 0-255 (8-bit PWM duty cycle)
 #define SCREEN_OFF           0      // Brightness value for screen off
 #define CONFIG_PATH          "/etc/touch-timeout.conf"
-#define VERSION              "1.0.1"
+#define VERSION              "1.0.2"
 
-static volatile int running = 1;    // Used for graceful shutdown on SIGTERM/SIGINT
+static volatile sig_atomic_t running = 1;  // CERT SIG31-C: Use sig_atomic_t for signal handlers
 
 // --------------------
 // Display state machine
@@ -125,6 +129,24 @@ static int safe_atoi(const char *str, int *result) {
 }
 
 // --------------------
+// CERT FIO32-C: Validate path component (no traversal)
+// Returns 0 if safe, -1 if path contains traversal sequences
+// --------------------
+static int validate_path_component(const char *path) {
+    if (path == NULL || path[0] == '\0')
+        return -1;
+    // Reject absolute paths and path traversal
+    if (path[0] == '/')
+        return -1;
+    if (strstr(path, "..") != NULL)
+        return -1;
+    // Reject any path separators (should be just a filename)
+    if (strchr(path, '/') != NULL)
+        return -1;
+    return 0;
+}
+
+// --------------------
 // Parse /etc/touch-timeout.conf for key=value pairs
 // Supports:
 //   brightness=150
@@ -155,29 +177,58 @@ static void load_config(const char *path, int *brightness, int *timeout,
             
             int tmp;
             if (strcmp(key, "brightness") == 0) {
-                if (safe_atoi(value, &tmp) == 0) *brightness = tmp;
-                else syslog(LOG_WARNING, "Invalid brightness '%s' at line %d", value, line_num);
+                if (safe_atoi(value, &tmp) == 0) {
+                    // CERT INT31-C: Validate range before use
+                    if (tmp >= 0 && tmp <= MAX_BRIGHTNESS_LIMIT)
+                        *brightness = tmp;
+                    else
+                        syslog(LOG_WARNING, "brightness %d out of range (0-%d) at line %d", tmp, MAX_BRIGHTNESS_LIMIT, line_num);
+                } else {
+                    syslog(LOG_WARNING, "Invalid brightness '%s' at line %d", value, line_num);
+                }
             }
             else if (strcmp(key, "off_timeout") == 0) {
-                if (safe_atoi(value, &tmp) == 0) *timeout = tmp;
-                else syslog(LOG_WARNING, "Invalid off_timeout '%s' at line %d", value, line_num);
+                if (safe_atoi(value, &tmp) == 0) {
+                    if (tmp >= 10)
+                        *timeout = tmp;
+                    else
+                        syslog(LOG_WARNING, "off_timeout %d below minimum (10) at line %d", tmp, line_num);
+                } else {
+                    syslog(LOG_WARNING, "Invalid off_timeout '%s' at line %d", value, line_num);
+                }
             }
-            // snprintf() advantages over strncpy():
-            // 1. Always null-terminates (strncpy() does NOT if src >= dest size)
-            // 2. Single operation instead of two (strncpy + manual '\0')
-            // 3. Returns chars written (useful for overflow detection)
-            // 4. More secure - CERT C Coding Standard recommends snprintf() over strncpy()
-            else if (strcmp(key, "backlight") == 0)
-                snprintf(backlight, bl_sz, "%s", value);  // Always null-terminates
-            else if (strcmp(key, "device") == 0)
-                snprintf(device, dev_sz, "%s", value);    // Always null-terminates
+            // CERT FIO32-C: Validate path components to prevent traversal
+            else if (strcmp(key, "backlight") == 0) {
+                if (validate_path_component(value) == 0)
+                    snprintf(backlight, bl_sz, "%s", value);
+                else
+                    syslog(LOG_WARNING, "Invalid backlight path '%s' (no / or ..) at line %d", value, line_num);
+            }
+            else if (strcmp(key, "device") == 0) {
+                if (validate_path_component(value) == 0)
+                    snprintf(device, dev_sz, "%s", value);
+                else
+                    syslog(LOG_WARNING, "Invalid device path '%s' (no / or ..) at line %d", value, line_num);
+            }
             else if (strcmp(key, "poll_interval") == 0) {
-                if (safe_atoi(value, &tmp) == 0) *poll_interval = tmp;
-                else syslog(LOG_WARNING, "Invalid poll_interval '%s' at line %d", value, line_num);
+                if (safe_atoi(value, &tmp) == 0) {
+                    if (tmp >= 10 && tmp <= 2000)
+                        *poll_interval = tmp;
+                    else
+                        syslog(LOG_WARNING, "poll_interval %d out of range (10-2000) at line %d", tmp, line_num);
+                } else {
+                    syslog(LOG_WARNING, "Invalid poll_interval '%s' at line %d", value, line_num);
+                }
             }
             else if (strcmp(key, "dim_percent") == 0) {
-                if (safe_atoi(value, &tmp) == 0) *dim_percent = tmp;
-                else syslog(LOG_WARNING, "Invalid dim_percent '%s' at line %d", value, line_num);
+                if (safe_atoi(value, &tmp) == 0) {
+                    if (tmp >= 10 && tmp <= 100)
+                        *dim_percent = tmp;
+                    else
+                        syslog(LOG_WARNING, "dim_percent %d out of range (10-100) at line %d", tmp, line_num);
+                } else {
+                    syslog(LOG_WARNING, "Invalid dim_percent '%s' at line %d", value, line_num);
+                }
             }
             else
                 syslog(LOG_WARNING, "Unknown config key '%s' at line %d", key, line_num);
@@ -239,14 +290,20 @@ static int read_brightness(int fd) {
 // syncs VFS metadata which is unnecessary and adds 5-10ms latency per write
 // --------------------
 static int set_brightness(struct display_state *state, int brightness) {
-    // Catches: NULL pointer dereference from uninitialized state
-    assert(state != NULL);
-    // Catches: Brightness overflow from config parsing or calculation bugs  
-    // Valid range: 0-255 (8-bit PWM duty cycle)
-    assert(brightness >= 0 && brightness <= MAX_BRIGHTNESS_LIMIT);
-    // Catches: File descriptor corruption or early close
-    assert(state->bright_fd > 0);
- 
+    // CERT ERR06-C: Validate parameters with graceful error handling
+    if (state == NULL) {
+        syslog(LOG_ERR, "set_brightness: NULL state pointer");
+        return -1;
+    }
+    if (brightness < 0 || brightness > MAX_BRIGHTNESS_LIMIT) {
+        syslog(LOG_ERR, "set_brightness: brightness %d out of range (0-%d)", brightness, MAX_BRIGHTNESS_LIMIT);
+        return -1;
+    }
+    if (state->bright_fd <= 0) {
+        syslog(LOG_ERR, "set_brightness: invalid file descriptor %d", state->bright_fd);
+        return -1;
+    }
+
     // Skip if brightness unchanged (prevents redundant hardware writes)
     if (brightness == state->current_brightness)
         return 0;
@@ -279,11 +336,20 @@ static int set_brightness(struct display_state *state, int brightness) {
 // Restore full brightness after a touch event
 // --------------------
 static int restore_brightness(struct display_state *state) {
-    // Catches: Invalid user_brightness from config validation bypass
-    assert(state->user_brightness >= MIN_BRIGHTNESS && state->user_brightness <= MAX_BRIGHTNESS_LIMIT);
-    // Catches: State machine corruption before restore
-    assert(state->state == STATE_DIMMED || state->state == STATE_OFF);
- 
+    // CERT ERR06-C: Validate with graceful error handling
+    if (state == NULL) {
+        syslog(LOG_ERR, "restore_brightness: NULL state pointer");
+        return -1;
+    }
+    if (state->user_brightness < MIN_BRIGHTNESS || state->user_brightness > MAX_BRIGHTNESS_LIMIT) {
+        syslog(LOG_ERR, "restore_brightness: invalid user_brightness %d", state->user_brightness);
+        return -1;
+    }
+    if (state->state != STATE_DIMMED && state->state != STATE_OFF) {
+        syslog(LOG_WARNING, "restore_brightness: unexpected state %d", state->state);
+        // Continue anyway - this is not fatal
+    }
+
     if (set_brightness(state, state->user_brightness) == 0) {
         state->state = STATE_FULL;
         state->last_input = time(NULL);
@@ -298,13 +364,21 @@ static int restore_brightness(struct display_state *state) {
 // Handles missed poll cycles by checking if current time has passed target times
 // --------------------
 static void check_timeouts(struct display_state *state) {
-    // Catches: NULL pointer from incorrect function call
-    assert(state != NULL);
-    // Catches: Invalid state enum (memory corruption or uninitialized)
-    assert(state->state >= STATE_FULL && state->state <= STATE_OFF);
-    // Catches: Timeout misconfiguration or integer overflow
-    assert(state->dim_timeout > 0 && state->dim_timeout <= state->off_timeout);
-    
+    // CERT ERR06-C: Validate with graceful error handling
+    if (state == NULL) {
+        syslog(LOG_ERR, "check_timeouts: NULL state pointer");
+        return;
+    }
+    if (state->state < STATE_FULL || state->state > STATE_OFF) {
+        syslog(LOG_ERR, "check_timeouts: invalid state %d", state->state);
+        return;
+    }
+    if (state->dim_timeout <= 0 || state->dim_timeout > state->off_timeout) {
+        syslog(LOG_ERR, "check_timeouts: invalid timeouts (dim=%d, off=%d)",
+               state->dim_timeout, state->off_timeout);
+        return;
+    }
+
     time_t now = time(NULL);
     double idle = difftime(now, state->last_input);
  
@@ -412,12 +486,18 @@ int main(int argc, char *argv[]) {
     }
 
     // Calculate dim_timeout from percentage
-    int dim_timeout = (off_timeout * dim_percent) / 100;
-    
-    // Catches: Arithmetic overflow or invalid config combinations
-    assert(dim_timeout > 0 && dim_timeout <= off_timeout);
-    // Catches: Validation bypass allowing out-of-range brightness
-    assert(user_brightness >= MIN_BRIGHTNESS && user_brightness <= max_brightness);
+    // CERT INT32-C: Use long to prevent overflow on multiplication
+    int dim_timeout = (int)(((long)off_timeout * dim_percent) / 100);
+
+    // CERT ERR06-C: Replace assert() with graceful error handling
+    if (dim_timeout <= 0 || dim_timeout > off_timeout) {
+        syslog(LOG_ERR, "Invalid dim_timeout calculation (overflow or config error)");
+        exit(EXIT_FAILURE);
+    }
+    if (user_brightness < MIN_BRIGHTNESS || user_brightness > max_brightness) {
+        syslog(LOG_ERR, "brightness %d out of valid range (%d-%d)", user_brightness, MIN_BRIGHTNESS, max_brightness);
+        exit(EXIT_FAILURE);
+    }
   
     if (dim_percent == 100) {
         syslog(LOG_INFO, "Dimming disabled (dim_percent=100%%)");
