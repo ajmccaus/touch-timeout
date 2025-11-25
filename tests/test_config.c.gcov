@@ -1,0 +1,428 @@
+        -:    0:Source:test_config.c
+        -:    0:Graph:test_config-test_config.gcno
+        -:    0:Data:test_config-test_config.gcda
+        -:    0:Runs:6
+        -:    0:Programs:1
+        -:    1:/*
+        -:    2: * test_config.c
+        -:    3: * -------------
+        -:    4: * Unit tests for configuration module
+        -:    5: *
+        -:    6: * Tests:
+        -:    7: * - Default initialization
+        -:    8: * - File parsing (key=value)
+        -:    9: * - Validation (ranges, overflow protection)
+        -:   10: * - Security (path traversal, integer overflow)
+        -:   11: * - Error handling
+        -:   12: */
+        -:   13:
+        -:   14:#include "config.h"
+        -:   15:#include <stdio.h>
+        -:   16:#include <stdlib.h>
+        -:   17:#include <string.h>
+        -:   18:#include <assert.h>
+        -:   19:#include <unistd.h>
+        -:   20:#include <limits.h>
+        -:   21:
+        -:   22:/* Test framework */
+        -:   23:static int tests_run = 0;
+        -:   24:static int tests_passed = 0;
+        -:   25:static int tests_failed = 0;
+        -:   26:
+        -:   27:#define TEST(name) static void name(void)
+        -:   28:#define RUN_TEST(name) do { \
+        -:   29:    printf("  %-60s ", #name); \
+        -:   30:    fflush(stdout); \
+        -:   31:    tests_run++; \
+        -:   32:    name(); \
+        -:   33:    tests_passed++; \
+        -:   34:    printf("PASS\n"); \
+        -:   35:} while(0)
+        -:   36:
+        -:   37:#define ASSERT_TRUE(cond) do { \
+        -:   38:    if (!(cond)) { \
+        -:   39:        printf("FAIL\n    %s:%d: %s\n", __FILE__, __LINE__, #cond); \
+        -:   40:        tests_failed++; \
+        -:   41:        return; \
+        -:   42:    } \
+        -:   43:} while(0)
+        -:   44:
+        -:   45:#define ASSERT_EQ(a, b) ASSERT_TRUE((a) == (b))
+        -:   46:#define ASSERT_STR_EQ(a, b) ASSERT_TRUE(strcmp((a), (b)) == 0)
+        -:   47:
+        -:   48:/* Test helpers */
+       78:   49:static char *create_temp_config(const char *content) {
+        -:   50:    static char path[256];
+       78:   51:    snprintf(path, sizeof(path), "/tmp/test_config_%d.conf", getpid());
+       78:   52:    FILE *f = fopen(path, "w");
+       78:   53:    if (f) {
+       78:   54:        fputs(content, f);
+       78:   55:        fclose(f);
+       78:   56:    }
+       78:   57:    return path;
+        -:   58:}
+        -:   59:
+       78:   60:static void cleanup_temp_file(const char *path) {
+       78:   61:    unlink(path);
+       78:   62:}
+        -:   63:
+        -:   64:/* ==================== INITIALIZATION TESTS ==================== */
+        -:   65:
+        6:   66:TEST(test_config_init_defaults) {
+        6:   67:    config_t *config = config_init();
+        6:   68:    ASSERT_TRUE(config != NULL);
+        6:   69:    ASSERT_EQ(config->brightness, CONFIG_DEFAULT_BRIGHTNESS);
+        6:   70:    ASSERT_EQ(config->off_timeout, CONFIG_DEFAULT_OFF_TIMEOUT);
+        6:   71:    ASSERT_EQ(config->dim_percent, CONFIG_DEFAULT_DIM_PERCENT);
+        6:   72:    ASSERT_EQ(config->poll_interval, CONFIG_DEFAULT_POLL_INTERVAL);
+        6:   73:    ASSERT_STR_EQ(config->backlight, CONFIG_DEFAULT_BACKLIGHT);
+        6:   74:    ASSERT_STR_EQ(config->device, CONFIG_DEFAULT_DEVICE);
+        6:   75:}
+        -:   76:
+        -:   77:/* ==================== PARSING TESTS ==================== */
+        -:   78:
+        6:   79:TEST(test_config_load_brightness) {
+        6:   80:    config_t *config = config_init();
+        6:   81:    const char *content = "brightness=200\n";
+        6:   82:    char *path = create_temp_config(content);
+        -:   83:
+        6:   84:    ASSERT_EQ(config_load(config, path), 0);
+        6:   85:    ASSERT_EQ(config->brightness, 200);
+        -:   86:
+        6:   87:    cleanup_temp_file(path);
+        6:   88:}
+        -:   89:
+        6:   90:TEST(test_config_load_all_values) {
+        6:   91:    config_t *config = config_init();
+        6:   92:    const char *content =
+        -:   93:        "brightness=150\n"
+        -:   94:        "off_timeout=600\n"
+        -:   95:        "dim_percent=30\n"
+        -:   96:        "poll_interval=200\n"
+        -:   97:        "backlight=10-0045\n"
+        -:   98:        "device=event2\n";
+        6:   99:    char *path = create_temp_config(content);
+        -:  100:
+        6:  101:    ASSERT_EQ(config_load(config, path), 0);
+        6:  102:    ASSERT_EQ(config->brightness, 150);
+        6:  103:    ASSERT_EQ(config->off_timeout, 600);
+        6:  104:    ASSERT_EQ(config->dim_percent, 30);
+        6:  105:    ASSERT_EQ(config->poll_interval, 200);
+        6:  106:    ASSERT_STR_EQ(config->backlight, "10-0045");
+        6:  107:    ASSERT_STR_EQ(config->device, "event2");
+        -:  108:
+        6:  109:    cleanup_temp_file(path);
+        6:  110:}
+        -:  111:
+        6:  112:TEST(test_config_load_missing_file) {
+        6:  113:    config_t *config = config_init();
+        6:  114:    int original_brightness = config->brightness;
+        -:  115:
+        -:  116:    /* Should succeed with defaults when file missing */
+        6:  117:    ASSERT_EQ(config_load(config, "/nonexistent/file.conf"), 0);
+        6:  118:    ASSERT_EQ(config->brightness, original_brightness);
+        6:  119:}
+        -:  120:
+        6:  121:TEST(test_config_load_comments_ignored) {
+        6:  122:    config_t *config = config_init();
+        6:  123:    const char *content =
+        -:  124:        "# This is a comment\n"
+        -:  125:        "brightness=180\n"
+        -:  126:        "; Another comment\n"
+        -:  127:        "off_timeout=120\n";
+        6:  128:    char *path = create_temp_config(content);
+        -:  129:
+        6:  130:    ASSERT_EQ(config_load(config, path), 0);
+        6:  131:    ASSERT_EQ(config->brightness, 180);
+        6:  132:    ASSERT_EQ(config->off_timeout, 120);
+        -:  133:
+        6:  134:    cleanup_temp_file(path);
+        6:  135:}
+        -:  136:
+        6:  137:TEST(test_config_load_whitespace_handling) {
+        6:  138:    config_t *config = config_init();
+        6:  139:    const char *content =
+        -:  140:        "  brightness = 175  \n"
+        -:  141:        "off_timeout=  450\n";
+        6:  142:    char *path = create_temp_config(content);
+        -:  143:
+        6:  144:    ASSERT_EQ(config_load(config, path), 0);
+        6:  145:    ASSERT_EQ(config->brightness, 175);
+        6:  146:    ASSERT_EQ(config->off_timeout, 450);
+        -:  147:
+        6:  148:    cleanup_temp_file(path);
+        6:  149:}
+        -:  150:
+        -:  151:/* ==================== VALIDATION TESTS ==================== */
+        -:  152:
+        6:  153:TEST(test_config_validate_brightness_clamping) {
+        6:  154:    config_t *config = config_init();
+        6:  155:    config->brightness = 300;  /* Above hardware max */
+        -:  156:
+        6:  157:    ASSERT_EQ(config_validate(config, 200), 0);
+        6:  158:    ASSERT_EQ(config->brightness, 200);  /* Clamped to max */
+        6:  159:}
+        -:  160:
+        6:  161:TEST(test_config_validate_minimum_brightness) {
+        6:  162:    config_t *config = config_init();
+        6:  163:    config->brightness = 10;  /* Below minimum */
+        -:  164:
+        6:  165:    ASSERT_EQ(config_validate(config, 255), 0);
+        6:  166:    ASSERT_EQ(config->brightness, CONFIG_MIN_BRIGHTNESS);
+        6:  167:}
+        -:  168:
+        6:  169:TEST(test_config_validate_dim_timeout_calculation) {
+        6:  170:    config_t *config = config_init();
+        6:  171:    config->off_timeout = 300;
+        6:  172:    config->dim_percent = 50;
+        -:  173:
+        6:  174:    ASSERT_EQ(config_validate(config, 255), 0);
+        6:  175:    ASSERT_EQ(config->dim_timeout, 150);
+        6:  176:}
+        -:  177:
+        6:  178:TEST(test_config_validate_dim_brightness_calculation) {
+        6:  179:    config_t *config = config_init();
+        6:  180:    config->brightness = 200;
+        -:  181:
+        6:  182:    ASSERT_EQ(config_validate(config, 255), 0);
+        6:  183:    ASSERT_EQ(config->dim_brightness, 20);  /* 200/10 */
+        6:  184:}
+        -:  185:
+        6:  186:TEST(test_config_validate_dim_brightness_minimum) {
+        6:  187:    config_t *config = config_init();
+        6:  188:    config->brightness = 50;  /* Would result in dim=5 */
+        -:  189:
+        6:  190:    ASSERT_EQ(config_validate(config, 255), 0);
+        6:  191:    ASSERT_EQ(config->dim_brightness, CONFIG_MIN_DIM_BRIGHTNESS);
+        6:  192:}
+        -:  193:
+        -:  194:/* ==================== RANGE VALIDATION TESTS ==================== */
+        -:  195:
+        6:  196:TEST(test_config_invalid_brightness_negative) {
+        6:  197:    config_t *config = config_init();
+        6:  198:    const char *content = "brightness=-100\n";
+        6:  199:    char *path = create_temp_config(content);
+        -:  200:
+        6:  201:    int original = config->brightness;
+        6:  202:    config_load(config, path);
+        6:  203:    ASSERT_EQ(config->brightness, original);  /* Unchanged */
+        -:  204:
+        6:  205:    cleanup_temp_file(path);
+        6:  206:}
+        -:  207:
+        6:  208:TEST(test_config_invalid_brightness_above_max) {
+        6:  209:    config_t *config = config_init();
+        6:  210:    const char *content = "brightness=256\n";
+        6:  211:    char *path = create_temp_config(content);
+        -:  212:
+        6:  213:    int original = config->brightness;
+        6:  214:    config_load(config, path);
+        6:  215:    ASSERT_EQ(config->brightness, original);  /* Unchanged */
+        -:  216:
+        6:  217:    cleanup_temp_file(path);
+        6:  218:}
+        -:  219:
+        6:  220:TEST(test_config_invalid_timeout_below_minimum) {
+        6:  221:    config_t *config = config_init();
+        6:  222:    const char *content = "off_timeout=9\n";
+        6:  223:    char *path = create_temp_config(content);
+        -:  224:
+        6:  225:    int original = config->off_timeout;
+        6:  226:    config_load(config, path);
+        6:  227:    ASSERT_EQ(config->off_timeout, original);  /* Unchanged */
+        -:  228:
+        6:  229:    cleanup_temp_file(path);
+        6:  230:}
+        -:  231:
+        6:  232:TEST(test_config_valid_timeout_at_minimum) {
+        6:  233:    config_t *config = config_init();
+        6:  234:    const char *content = "off_timeout=10\n";
+        6:  235:    char *path = create_temp_config(content);
+        -:  236:
+        6:  237:    config_load(config, path);
+        6:  238:    ASSERT_EQ(config->off_timeout, 10);
+        -:  239:
+        6:  240:    cleanup_temp_file(path);
+        6:  241:}
+        -:  242:
+        6:  243:TEST(test_config_invalid_dim_percent_out_of_range) {
+        6:  244:    config_t *config = config_init();
+        6:  245:    const char *content = "dim_percent=101\n";
+        6:  246:    char *path = create_temp_config(content);
+        -:  247:
+        6:  248:    int original = config->dim_percent;
+        6:  249:    config_load(config, path);
+        6:  250:    ASSERT_EQ(config->dim_percent, original);  /* Unchanged */
+        -:  251:
+        6:  252:    cleanup_temp_file(path);
+        6:  253:}
+        -:  254:
+        6:  255:TEST(test_config_invalid_poll_interval_out_of_range) {
+        6:  256:    config_t *config = config_init();
+        6:  257:    const char *content = "poll_interval=5\n";
+        6:  258:    char *path = create_temp_config(content);
+        -:  259:
+        6:  260:    int original = config->poll_interval;
+        6:  261:    config_load(config, path);
+        6:  262:    ASSERT_EQ(config->poll_interval, original);  /* Unchanged */
+        -:  263:
+        6:  264:    cleanup_temp_file(path);
+        6:  265:}
+        -:  266:
+        -:  267:/* ==================== SECURITY TESTS ==================== */
+        -:  268:
+        6:  269:TEST(test_config_path_traversal_device) {
+        6:  270:    config_t *config = config_init();
+        6:  271:    const char *content = "device=../sda\n";
+        6:  272:    char *path = create_temp_config(content);
+        -:  273:
+        -:  274:    char original[64];
+        6:  275:    strcpy(original, config->device);
+        6:  276:    config_load(config, path);
+        6:  277:    ASSERT_STR_EQ(config->device, original);  /* Unchanged */
+        -:  278:
+        6:  279:    cleanup_temp_file(path);
+        6:  280:}
+        -:  281:
+        6:  282:TEST(test_config_path_traversal_backlight) {
+        6:  283:    config_t *config = config_init();
+        6:  284:    const char *content = "backlight=../../etc\n";
+        6:  285:    char *path = create_temp_config(content);
+        -:  286:
+        -:  287:    char original[64];
+        6:  288:    strcpy(original, config->backlight);
+        6:  289:    config_load(config, path);
+        6:  290:    ASSERT_STR_EQ(config->backlight, original);  /* Unchanged */
+        -:  291:
+        6:  292:    cleanup_temp_file(path);
+        6:  293:}
+        -:  294:
+        6:  295:TEST(test_config_absolute_path_rejected) {
+        6:  296:    config_t *config = config_init();
+        6:  297:    const char *content = "device=/etc/passwd\n";
+        6:  298:    char *path = create_temp_config(content);
+        -:  299:
+        -:  300:    char original[64];
+        6:  301:    strcpy(original, config->device);
+        6:  302:    config_load(config, path);
+        6:  303:    ASSERT_STR_EQ(config->device, original);  /* Unchanged */
+        -:  304:
+        6:  305:    cleanup_temp_file(path);
+        6:  306:}
+        -:  307:
+        6:  308:TEST(test_config_integer_overflow_prevention) {
+        6:  309:    config_t *config = config_init();
+        6:  310:    config->off_timeout = 100000;  /* Large value */
+        6:  311:    config->dim_percent = 50;
+        -:  312:
+        -:  313:    /* Should handle safely without overflow */
+        6:  314:    ASSERT_EQ(config_validate(config, 255), 0);
+        6:  315:    ASSERT_TRUE(config->dim_timeout > 0);
+        6:  316:    ASSERT_TRUE(config->dim_timeout < config->off_timeout);
+        6:  317:}
+        -:  318:
+        -:  319:/* ==================== SAFE_ATOI TESTS ==================== */
+        -:  320:
+        6:  321:TEST(test_safe_atoi_valid_positive) {
+        -:  322:    int result;
+        6:  323:    ASSERT_EQ(config_safe_atoi("123", &result), 0);
+        6:  324:    ASSERT_EQ(result, 123);
+        6:  325:}
+        -:  326:
+        6:  327:TEST(test_safe_atoi_valid_negative) {
+        -:  328:    int result;
+        6:  329:    ASSERT_EQ(config_safe_atoi("-456", &result), 0);
+        6:  330:    ASSERT_EQ(result, -456);
+        6:  331:}
+        -:  332:
+        6:  333:TEST(test_safe_atoi_zero) {
+        -:  334:    int result;
+        6:  335:    ASSERT_EQ(config_safe_atoi("0", &result), 0);
+        6:  336:    ASSERT_EQ(result, 0);
+        6:  337:}
+        -:  338:
+        6:  339:TEST(test_safe_atoi_invalid_empty) {
+        -:  340:    int result;
+        6:  341:    ASSERT_EQ(config_safe_atoi("", &result), -1);
+        6:  342:}
+        -:  343:
+        6:  344:TEST(test_safe_atoi_invalid_letters) {
+        -:  345:    int result;
+        6:  346:    ASSERT_EQ(config_safe_atoi("abc", &result), -1);
+        6:  347:}
+        -:  348:
+        6:  349:TEST(test_safe_atoi_invalid_mixed) {
+        -:  350:    int result;
+        6:  351:    ASSERT_EQ(config_safe_atoi("123abc", &result), -1);
+        6:  352:}
+        -:  353:
+        6:  354:TEST(test_safe_atoi_overflow) {
+        -:  355:    int result;
+        6:  356:    ASSERT_EQ(config_safe_atoi("99999999999999999999", &result), -1);
+        6:  357:}
+        -:  358:
+        6:  359:TEST(test_safe_atoi_max_int) {
+        -:  360:    int result;
+        -:  361:    char buf[32];
+        6:  362:    snprintf(buf, sizeof(buf), "%d", INT_MAX);
+        6:  363:    ASSERT_EQ(config_safe_atoi(buf, &result), 0);
+        6:  364:    ASSERT_EQ(result, INT_MAX);
+        6:  365:}
+        -:  366:
+        -:  367:/* ==================== MAIN TEST RUNNER ==================== */
+        -:  368:
+        6:  369:int main(void) {
+        6:  370:    printf("\n========================================\n");
+        6:  371:    printf("Configuration Module Unit Tests\n");
+        6:  372:    printf("========================================\n\n");
+        -:  373:
+        6:  374:    printf("Initialization tests:\n");
+        6:  375:    RUN_TEST(test_config_init_defaults);
+        -:  376:
+        6:  377:    printf("\nParsing tests:\n");
+        6:  378:    RUN_TEST(test_config_load_brightness);
+        6:  379:    RUN_TEST(test_config_load_all_values);
+        6:  380:    RUN_TEST(test_config_load_missing_file);
+        6:  381:    RUN_TEST(test_config_load_comments_ignored);
+        6:  382:    RUN_TEST(test_config_load_whitespace_handling);
+        -:  383:
+        6:  384:    printf("\nValidation tests:\n");
+        6:  385:    RUN_TEST(test_config_validate_brightness_clamping);
+        6:  386:    RUN_TEST(test_config_validate_minimum_brightness);
+        6:  387:    RUN_TEST(test_config_validate_dim_timeout_calculation);
+        6:  388:    RUN_TEST(test_config_validate_dim_brightness_calculation);
+        6:  389:    RUN_TEST(test_config_validate_dim_brightness_minimum);
+        -:  390:
+        6:  391:    printf("\nRange validation tests:\n");
+        6:  392:    RUN_TEST(test_config_invalid_brightness_negative);
+        6:  393:    RUN_TEST(test_config_invalid_brightness_above_max);
+        6:  394:    RUN_TEST(test_config_invalid_timeout_below_minimum);
+        6:  395:    RUN_TEST(test_config_valid_timeout_at_minimum);
+        6:  396:    RUN_TEST(test_config_invalid_dim_percent_out_of_range);
+        6:  397:    RUN_TEST(test_config_invalid_poll_interval_out_of_range);
+        -:  398:
+        6:  399:    printf("\nSecurity tests:\n");
+        6:  400:    RUN_TEST(test_config_path_traversal_device);
+        6:  401:    RUN_TEST(test_config_path_traversal_backlight);
+        6:  402:    RUN_TEST(test_config_absolute_path_rejected);
+        6:  403:    RUN_TEST(test_config_integer_overflow_prevention);
+        -:  404:
+        6:  405:    printf("\nsafe_atoi tests:\n");
+        6:  406:    RUN_TEST(test_safe_atoi_valid_positive);
+        6:  407:    RUN_TEST(test_safe_atoi_valid_negative);
+        6:  408:    RUN_TEST(test_safe_atoi_zero);
+        6:  409:    RUN_TEST(test_safe_atoi_invalid_empty);
+        6:  410:    RUN_TEST(test_safe_atoi_invalid_letters);
+        6:  411:    RUN_TEST(test_safe_atoi_invalid_mixed);
+        6:  412:    RUN_TEST(test_safe_atoi_overflow);
+        6:  413:    RUN_TEST(test_safe_atoi_max_int);
+        -:  414:
+        6:  415:    printf("\n========================================\n");
+        6:  416:    printf("Results: %d/%d passed", tests_passed, tests_run);
+        6:  417:    if (tests_failed > 0) {
+    #####:  418:        printf(" (%d FAILED)", tests_failed);
+    #####:  419:    }
+        6:  420:    printf("\n========================================\n\n");
+        -:  421:
+        6:  422:    return tests_failed > 0 ? 1 : 0;
+        -:  423:}

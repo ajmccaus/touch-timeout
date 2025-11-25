@@ -1,0 +1,185 @@
+        -:    0:Source:../src/state.c
+        -:    0:Graph:state_test.gcno
+        -:    0:Data:state_test.gcda
+        -:    0:Runs:1
+        -:    0:Programs:1
+        -:    1:/*
+        -:    2: * state.c
+        -:    3: * -------
+        -:    4: * Display power state machine implementation - pure logic
+        -:    5: *
+        -:    6: * Three-state machine: FULL -> DIMMED -> OFF
+        -:    7: * No I/O dependencies - fully testable
+        -:    8: */
+        -:    9:
+        -:   10:#include "state.h"
+        -:   11:#include <stdlib.h>
+        -:   12:#include <syslog.h>
+        -:   13:
+        -:   14:/*
+        -:   15: * Initialize state machine
+        -:   16: */
+      147:   17:int state_init(state_t *state, int user_brightness, int dim_brightness,
+        -:   18:               int dim_timeout_sec, int off_timeout_sec) {
+        -:   19:    /* Validate parameters */
+      147:   20:    if (state == NULL) {
+        7:   21:        syslog(LOG_ERR, "state_init: NULL state");
+        7:   22:        return -1;
+        -:   23:    }
+        -:   24:
+      140:   25:    if (user_brightness <= 0 || dim_brightness < 0) {
+        7:   26:        syslog(LOG_ERR, "state_init: invalid brightness values");
+        7:   27:        return -1;
+        -:   28:    }
+        -:   29:
+      133:   30:    if (dim_timeout_sec <= 0 || off_timeout_sec <= 0) {
+        7:   31:        syslog(LOG_ERR, "state_init: invalid timeout values");
+        7:   32:        return -1;
+        -:   33:    }
+        -:   34:
+      126:   35:    if (dim_timeout_sec >= off_timeout_sec) {
+        7:   36:        syslog(LOG_ERR, "state_init: dim_timeout >= off_timeout");
+        7:   37:        return -1;
+        -:   38:    }
+        -:   39:
+        -:   40:    /* Initialize state */
+      119:   41:    state->current_state = STATE_FULL;
+      119:   42:    state->user_brightness = user_brightness;
+      119:   43:    state->dim_brightness = dim_brightness;
+      119:   44:    state->dim_timeout_sec = dim_timeout_sec;
+      119:   45:    state->off_timeout_sec = off_timeout_sec;
+      119:   46:    state->last_input_time = time(NULL);
+        -:   47:
+      119:   48:    return 0;
+      147:   49:}
+        -:   50:
+        -:   51:/*
+        -:   52: * Handle state machine event
+        -:   53: */
+       84:   54:bool state_handle_event(state_t *state, state_event_t event, int *new_brightness) {
+       84:   55:    if (state == NULL || new_brightness == NULL) {
+    #####:   56:        syslog(LOG_ERR, "state_handle_event: NULL parameter");
+    #####:   57:        return false;
+        -:   58:    }
+        -:   59:
+       84:   60:    bool brightness_changed = false;
+       84:   61:    time_t now = time(NULL);
+        -:   62:    double idle;  /* Declare here for C11 compatibility */
+        -:   63:
+       84:   64:    switch (event) {
+        -:   65:        case STATE_EVENT_TOUCH:
+        -:   66:            /* Touch always restores to FULL state */
+       28:   67:            if (state->current_state != STATE_FULL) {
+       21:   68:                state->current_state = STATE_FULL;
+       21:   69:                *new_brightness = state->user_brightness;
+       21:   70:                brightness_changed = true;
+       21:   71:                syslog(LOG_INFO, "Touch detected - restored to FULL brightness %d",
+       21:   72:                       *new_brightness);
+       21:   73:            }
+        -:   74:            /* Update last input time */
+       28:   75:            state->last_input_time = now;
+       28:   76:            break;
+        -:   77:
+        -:   78:        case STATE_EVENT_TIMEOUT:
+        -:   79:            /* Calculate idle time */
+       56:   80:            idle = difftime(now, state->last_input_time);
+        -:   81:
+        -:   82:            /* Handle clock adjustment (NTP, manual time change) */
+       56:   83:            if (idle < -5.0) {
+        7:   84:                syslog(LOG_WARNING, "Clock adjusted backwards by %.1fs - resetting timer", -idle);
+        7:   85:                state->last_input_time = now;
+        7:   86:                break;
+        -:   87:            }
+        -:   88:
+        -:   89:            /* Check for state transitions based on idle time */
+       49:   90:            if (idle >= state->off_timeout_sec && state->current_state != STATE_OFF) {
+        -:   91:                /* Transition to OFF */
+       28:   92:                state->current_state = STATE_OFF;
+       28:   93:                *new_brightness = 0;
+       28:   94:                brightness_changed = true;
+       28:   95:                syslog(LOG_INFO, "Display OFF (idle=%.0fs)", idle);
+        -:   96:
+       49:   97:            } else if (idle >= state->dim_timeout_sec && state->current_state == STATE_FULL) {
+        -:   98:                /* Transition to DIMMED (only from FULL) */
+       14:   99:                state->current_state = STATE_DIMMED;
+       14:  100:                *new_brightness = state->dim_brightness;
+       14:  101:                brightness_changed = true;
+       14:  102:                syslog(LOG_INFO, "Display DIMMED to %d (idle=%.0fs)",
+       14:  103:                       *new_brightness, idle);
+       14:  104:            }
+       49:  105:            break;
+        -:  106:
+        -:  107:        default:
+    #####:  108:            syslog(LOG_WARNING, "state_handle_event: unknown event %d", event);
+    #####:  109:            return false;
+        -:  110:    }
+        -:  111:
+       84:  112:    return brightness_changed;
+       84:  113:}
+        -:  114:
+        -:  115:/*
+        -:  116: * Get current state
+        -:  117: */
+       21:  118:state_type_t state_get_current(const state_t *state) {
+       21:  119:    if (state == NULL)
+    #####:  120:        return STATE_OFF;  /* Safe default */
+        -:  121:
+       21:  122:    return state->current_state;
+       21:  123:}
+        -:  124:
+        -:  125:/*
+        -:  126: * Get current target brightness
+        -:  127: */
+       21:  128:int state_get_brightness(const state_t *state) {
+       21:  129:    if (state == NULL)
+    #####:  130:        return -1;
+        -:  131:
+       21:  132:    switch (state->current_state) {
+        -:  133:        case STATE_FULL:
+        7:  134:            return state->user_brightness;
+        -:  135:        case STATE_DIMMED:
+        7:  136:            return state->dim_brightness;
+        -:  137:        case STATE_OFF:
+        7:  138:            return 0;
+        -:  139:        default:
+    #####:  140:            return -1;
+        -:  141:    }
+       21:  142:}
+        -:  143:
+        -:  144:/*
+        -:  145: * Get seconds until next state transition
+        -:  146: */
+       28:  147:int state_get_next_timeout(const state_t *state) {
+       28:  148:    if (state == NULL)
+    #####:  149:        return -1;
+        -:  150:
+       28:  151:    time_t now = time(NULL);
+       28:  152:    double idle = difftime(now, state->last_input_time);
+        -:  153:
+        -:  154:    /* Handle clock going backwards */
+       28:  155:    if (idle < -5.0)
+    #####:  156:        return 1;  /* Check again soon */
+        -:  157:
+       28:  158:    switch (state->current_state) {
+        -:  159:        case STATE_FULL:
+        -:  160:            /* Next event is DIM */
+        -:  161:            {
+       14:  162:                int remaining = state->dim_timeout_sec - (int)idle;
+       14:  163:                return (remaining > 0) ? remaining : 0;
+        -:  164:            }
+        -:  165:
+        -:  166:        case STATE_DIMMED:
+        -:  167:            /* Next event is OFF */
+        -:  168:            {
+        7:  169:                int remaining = state->off_timeout_sec - (int)idle;
+        7:  170:                return (remaining > 0) ? remaining : 0;
+        -:  171:            }
+        -:  172:
+        -:  173:        case STATE_OFF:
+        -:  174:            /* No timeout - waiting for touch */
+        7:  175:            return -1;
+        -:  176:
+        -:  177:        default:
+    #####:  178:            return -1;
+        -:  179:    }
+       28:  180:}
