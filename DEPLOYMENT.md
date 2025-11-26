@@ -67,7 +67,7 @@ touch-timeout/
    aarch64-linux-gnu-gcc --version       # For ARM 64-bit
    ```
 
-3. **Network access**: SSH must be accessible on RPi4 at `192.1.1.X`
+3. **Network access**: SSH must be accessible on RPi4 at `192.168.1.X`
 
 ### On RPi4 Target
 
@@ -78,7 +78,7 @@ touch-timeout/
 
 ## Quick Start
 
-### Example: Deploy ARM 64-bit to RPi4 at 192.1.1.127
+### Example: Deploy ARM 64-bit to RPi4 at 192.168.1.127
 
 **Step 1: Compile and transfer from WSL2**
 ```bash
@@ -88,7 +88,7 @@ cd /path/to/touch-timeout
 
 **Step 2: SSH into RPi4 and install**
 ```bash
-ssh root@192.1.1.127
+ssh root@192.168.1.127
 sudo /tmp/touch-timeout-staging/install-on-rpi.sh
 ```
 
@@ -141,7 +141,7 @@ That's it! The service will restart automatically with the new binary.
 
 [INFO] Next steps:
   1. SSH into RPi4:
-     ssh root@192.1.1.127
+     ssh root@192.168.1.127
 
   2. Run the installation script:
      sudo /tmp/touch-timeout-staging/install-on-rpi.sh
@@ -271,20 +271,20 @@ If the previous binary is unavailable, redeploy from WSL2:
 sudo apt-get install gcc-arm-linux-gnueabihf gcc-aarch64-linux-gnu
 ```
 
-### Deploy Fails: "Cannot connect to root@192.1.1.X"
+### Deploy Fails: "Cannot connect to root@192.168.1.X"
 
 **Issue**: RPi4 not reachable or SSH not enabled
 
 **Checks**:
 ```bash
 # Verify RPi4 is online
-ping 192.1.1.127
+ping 192.168.1.127
 
 # Verify SSH is accessible
-ssh root@192.1.1.127 "echo ok"
+ssh root@192.168.1.127 "echo ok"
 
 # Check RPi4 systemd openssh status
-ssh root@192.1.1.127 "systemctl status ssh"
+ssh root@192.168.1.127 "systemctl status ssh"
 ```
 
 ### Service Won't Start After Deployment
@@ -314,11 +314,11 @@ journalctl -u touch-timeout.service -n 50 --no-pager
 ```bash
 # Deploy 32-bit
 ./scripts/deploy-arm.sh 127 arm32
-ssh root@192.1.1.127 "sudo /tmp/touch-timeout-staging/install-on-rpi.sh"
+ssh root@192.168.1.127 "sudo /tmp/touch-timeout-staging/install-on-rpi.sh"
 
 # Wait for verification, then deploy 64-bit
 ./scripts/deploy-arm.sh 127 arm64
-ssh root@192.1.1.127 "sudo /tmp/touch-timeout-staging/install-on-rpi.sh"
+ssh root@192.168.1.127 "sudo /tmp/touch-timeout-staging/install-on-rpi.sh"
 ```
 
 ### Automated Deployment (CI/CD)
@@ -331,17 +331,17 @@ set -e
 ./scripts/deploy-arm.sh 127 arm64
 
 # Install without interactive prompt (requires passwordless sudo)
-ssh root@192.1.1.127 "sudo /tmp/touch-timeout-staging/install-on-rpi.sh"
+ssh root@192.168.1.127 "sudo /tmp/touch-timeout-staging/install-on-rpi.sh"
 
 # Verify
-ssh root@192.1.1.127 "systemctl is-active touch-timeout.service && echo 'OK'"
+ssh root@192.168.1.127 "systemctl is-active touch-timeout.service && echo 'OK'"
 ```
 
 ### Custom IP Configuration
 
 Edit deploy-arm.sh to use different IP prefix:
 ```bash
-RPI_IP_PREFIX="10.0.0"    # Change from 192.1.1
+RPI_IP_PREFIX="10.0.0"    # Change from 192.168.1
 ./scripts/deploy-arm.sh 127 arm64   # Now targets 10.0.0.127
 ```
 

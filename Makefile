@@ -88,7 +88,7 @@ help:
 	@echo "  make arm64         - Build for ARM 64-bit (aarch64) → $(BUILD_DIR)/arm64/touch-timeout"
 	@echo ""
 	@echo "Deployment:"
-	@echo "  scripts/deploy-arm.sh 192.1.1.XXX [arm32|arm64]"
+	@echo "  scripts/deploy-arm.sh 192.168.1.XXX [arm32|arm64]"
 	@echo "    - Compile and deploy to RPi4 staging location (/tmp/touch-timeout-staging/)"
 	@echo "    - Then SSH to RPi and run: sudo /tmp/touch-timeout-staging/install-on-rpi.sh"
 
