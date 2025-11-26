@@ -2,13 +2,49 @@
 
 ## Overview
 
-Complete architectural refactoring of the touch-timeout daemon from monolithic (v1.0.2) to modular design (v2.0.0), implementing modern POSIX APIs, enhanced security, and comprehensive testability.
+Complete architectural refactoring of the touch-timeout daemon from monolithic (v1.0.0) to modular design (v2.0.0), implementing modern POSIX APIs, enhanced security, and comprehensive testability.
+
+## Features and Usage
+
+**Automatic Display Management:**
+- Display dims after configurable idle period (default: 50% of timeout)
+- Display powers off completely after full timeout (default: 300s)
+- Instant restoration on touch input
+- Brightness caching prevents redundant hardware writes
+
+**Configuration:**
+Edit `/etc/touch-timeout.conf`:
+```ini
+brightness=150        # Active brightness (15-255)
+off_timeout=300       # Seconds until screen off (min: 10)
+dim_percent=50        # Dim at 50% of timeout (10-100)
+device=event0         # Touch input device
+backlight=rpi_backlight  # Backlight device name
+```
+
+**Runtime Control:**
+```bash
+systemctl start touch-timeout    # Start service
+systemctl status touch-timeout   # Check status
+journalctl -u touch-timeout -f   # View logs
+```
+
+**Performance Testing:**
+```bash
+# Transfer test script
+scp scripts/test-performance.sh root@192.168.1.XXX:/tmp/
+
+# Run performance test (minimal output)
+ssh root@192.168.1.XXX "bash /tmp/test-performance.sh"
+
+# Results: CPU usage, memory, SD writes, file descriptors
+```
 
 ## Key Improvements
 
 ### 1. Modular Architecture
 
-**Before (v1.0.2):**
+**Before (v1.0.0):**
 - Single 594-line monolithic file (touch-timeout.c)
 - Tightly coupled hardware operations and business logic
 - Testing required `#include "touch-timeout.c"` pattern
@@ -53,28 +89,41 @@ src/
 
 ### 3. Systemd Integration
 
-**Before (v1.0.2):**
+**Before (v1.0.0):**
 - `Type=simple` service
 - No startup confirmation
 - No health monitoring
 - Systemd assumes ready immediately
 
 **After (v2.0.0):**
-- `Type=notify` with `sd_notify("READY=1")` on successful init
-- Watchdog support: `sd_notify("WATCHDOG=1")` every iteration
-- `WatchdogSec=30s` - systemd restarts if daemon hangs
-- Graceful shutdown with `sd_notify("STOPPING=1")`
+- Graceful shutdown handling (SIGTERM)
+- Automatic restart on failure
+- Timeout configuration for startup and shutdown
+- Optional watchdog support (requires libsystemd at build time)
 
-**Service Improvements:**
+**Service Configuration:**
 ```ini
 [Service]
-Type=notify                # Confirms successful startup
-WatchdogSec=30s           # Automatic recovery from hangs
-TimeoutStartSec=10s       # Fail fast on init errors
-TimeoutStopSec=5s         # Graceful shutdown window
+Type=simple               # Compatible with minimal systems
+Restart=on-failure        # Auto-restart on crashes
+TimeoutStartSec=10s      # Fail fast on init errors
+TimeoutStopSec=5s        # Graceful shutdown window
 ```
 
-### 4. Configuration Management
+**Note:** Full systemd notify and watchdog support requires compiling with libsystemd. For minimal buildroot systems without libsystemd, `Type=simple` is used.
+
+### 4. Logging System
+
+**Current Implementation (v2.0.0):**
+- Uses syslog for all messages (LOG_INFO, LOG_WARNING, LOG_ERR)
+- All logs sent to systemd journal
+- View logs: `journalctl -u touch-timeout -f`
+- No configurable verbosity (all messages logged)
+
+**Future Enhancement:**
+Configurable log levels planned for v2.1.0 (`log_level=0/1/2` in config file) to reduce SD card writes in production mode.
+
+### 5. Configuration Management
 
 **Before:**
 - Ad-hoc `if/strcmp` parsing
@@ -108,7 +157,7 @@ static const config_param_t config_params[] = {
 - Automatic range validation
 - CERT C compliant (INT31-C, FIO32-C)
 
-### 5. Security Enhancements
+### 6. Security Enhancements
 
 **CERT C Compliance:**
 
@@ -127,9 +176,9 @@ static const config_param_t config_params[] = {
 - No fsync() on sysfs writes (removed unnecessary sync)
 - Result: ~90% reduction in write operations
 
-### 6. Testing Infrastructure
+### 7. Testing Infrastructure
 
-**Before (v1.0.2):**
+**Before (v1.0.0):**
 - 1 monolithic test file (1354 lines)
 - Tests embedded with `#include "touch-timeout.c"`
 - No module isolation
@@ -140,6 +189,7 @@ static const config_param_t config_params[] = {
 - 50 tests across 2 modules (29 config + 21 state)
 - Pure logic testing without hardware
 - Mock headers for cross-platform development
+- Performance testing script for on-device validation
 
 **Test Coverage:**
 ```
@@ -158,6 +208,14 @@ State Machine Module:  21 tests
   - Clock handling: 1 test
   - Getters: 5 tests
   - Integration: 1 test
+
+Performance Testing (scripts/test-performance.sh):
+  - CPU usage monitoring (30s baseline)
+  - Memory leak detection (RSS growth tracking)
+  - SD card write activity measurement
+  - File descriptor leak detection
+  - System call profiling (if strace available)
+  - Minimal output mode to reduce logging overhead
 ```
 
 ## Technical Architecture
@@ -229,10 +287,10 @@ Benefits:
 
 ## Performance Metrics
 
-| Metric | v1.0.2 | v2.0.0 | Change |
+| Metric | v1.0.0 | v2.0.0 | Change |
 |--------|--------|--------|--------|
 | CPU (idle) | 0.08% | <0.05% | -38% |
-| Memory | ~2MB | ~2.1MB | +5% |
+| Memory (RSS) | ~0.2MB | ~0.2MB | Stable |
 | Lines of code | 594 | 850 | +43% |
 | Modules | 1 | 6 | +500% |
 | Test files | 1 | 2 | +100% |
@@ -244,6 +302,7 @@ Benefits:
 
 **Makefile Features:**
 - Separate compilation units
+- Cross-compilation support (ARM32, ARM64)
 - Automatic systemd detection via pkg-config
 - OS detection for mock headers (macOS/Linux)
 - Coverage instrumentation (gcc --coverage)
@@ -251,21 +310,42 @@ Benefits:
 
 **Build Targets:**
 ```bash
-make              # Build daemon
+make              # Build native binary → build/native/touch-timeout
 make test         # Run unit tests
 make coverage     # Generate coverage report
 make install      # Install to system
-make clean        # Clean artifacts
+make clean        # Clean native artifacts
+
+make arm32        # Cross-compile ARM 32-bit → build/arm32/touch-timeout
+make arm64        # Cross-compile ARM 64-bit → build/arm64/touch-timeout
+make clean-all    # Remove all build artifacts (native + cross-compiled)
 ```
+
+## Deployment
+
+**Cross-compilation and deployment workflow:**
+
+```bash
+# Step 1: Build and transfer from WSL2/Linux
+./scripts/deploy-arm.sh 127 arm64  # Deploy to 192.168.1.127
+
+# Step 2: SSH into RPi and install
+ssh root@192.168.1.127
+sudo /tmp/touch-timeout-staging/install-on-rpi.sh
+```
+
+Binary naming convention: `touch-timeout-{version}-{arch}` (e.g., `touch-timeout-2.0.0-arm64`)
+
+See DEPLOYMENT.md for prerequisites, rollback procedures, and troubleshooting.
 
 ## Migration Path
 
-For existing v1.0.x users:
+For existing v1.0.0 users:
 
 1. **Config file compatible**: No changes required to `/etc/touch-timeout.conf`
 2. **Service upgrade**: `systemctl daemon-reload` after install
 3. **Behavior identical**: Same dim/off timing and brightness control
-4. **Watchdog optional**: Works without systemd (stubs provided)
+4. **Minimal system support**: Works without systemd (optional integration)
 
 ## Known Limitations
 
@@ -276,13 +356,33 @@ For existing v1.0.x users:
 
 ## Future Enhancements (v2.1+)
 
-- [ ] Multi-display support with independent timeouts
-- [ ] DBus interface for runtime configuration
-- [ ] Ambient light sensor integration
-- [ ] Touch gesture detection (swipe to restore)
-- [ ] Configuration hot-reload (SIGHUP handler)
+### v2.1.0: Logging & Runtime Control (Planned)
+- [ ] Configurable log levels (`log_level=0/1/2` in config file)
+- [ ] Silent production mode to eliminate SD card writes
+- [ ] Extended dim timeout range (1%-100% of off_timeout, currently limited to 10%-100%)
+- [ ] DBus interface for runtime configuration changes without service restart
+  - Enables GUI control panels and integration with desktop environments
+
+### v2.2.0: Multi-Input & Hotplug (Planned)
+- [ ] USB hotplug via inotify monitoring
+- [ ] Multi-device input polling (up to 10 devices)
+- [ ] Auto-scan `/dev/input/by-path/` with capability filtering
+- [ ] Handle device add/remove during runtime
+
+### v2.3.0: Advanced Input Classification (Planned)
+- [ ] Device classification (touchscreen, mouse, keyboard)
+- [ ] Auto-enable only activity-relevant devices
+- [ ] Zero-config wake-on-input for mixed setups
+
+### v2.4.0: Optional Activity Sources (Proposed)
+- [ ] ALSA/PulseAudio playback detection prevents timeout
+- [ ] SSH session detection prevents screen-off
+- [ ] Toggleable activity sources in config
+
+### Testing & Quality (Ongoing)
 - [ ] Integration tests with hardware mocking
-- [ ] Stress tests (rapid state transitions, resource exhaustion)
+- [ ] Hotplug stress tests (connect/disconnect cycles)
+- [ ] Configuration hot-reload (SIGHUP handler)
 
 ## References
 
@@ -293,12 +393,12 @@ For existing v1.0.x users:
 
 ## Acknowledgments
 
-Original monolithic implementation by Andrew McCausland (GPL v3).
-Modular refactoring by Claude (Anthropic), November 2024.
+Design and original version by Andrew McCausland (GPL v3).
+Modular refactoring by Claude (Anthropic), November 2025.
 
 ## Version History
 
-- **v1.0.0**: Initial release (monolithic)
-- **v1.0.1**: CERT C security fixes
-- **v1.0.2**: Enhanced validation and error handling
-- **v2.0.0**: Complete modular refactoring (this document)
+- **v1.0.0**: Initial monolithic release (main branch)
+- **v2.0.0**: Complete modular refactoring with CERT C security compliance (this document)
+  - Incorporates security fixes from abandoned v1.0.1/v1.0.2 development
+  - Production-tested on Raspberry Pi 4 with 7" touchscreen
