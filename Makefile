@@ -14,7 +14,8 @@ VERSION_PATCH = 0
 CC = gcc
 CFLAGS = -O2 -Wall -Wextra -Wno-unused-parameter -std=c17 -D_POSIX_C_SOURCE=200809L -Iinclude
 LDFLAGS =
-TARGET = touch-timeout
+BUILD_DIR = build
+TARGET = $(BUILD_DIR)/native/touch-timeout
 
 # Detect OS - add mock includes for non-Linux systems
 UNAME_S := $(shell uname -s)
@@ -53,17 +54,14 @@ CONFIG_DIR = /etc
 
 .PHONY: all clean install uninstall test coverage version help arm32 arm64 clean-all
 
-# Build directory
-BUILD_DIR = build
-
-all: version $(TARGET)
+all: version $(BUILD_DIR)/native $(TARGET)
 
 # Display help information
 help:
 	@echo "Touch-timeout daemon build system (v$(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_PATCH))"
 	@echo ""
 	@echo "Targets:"
-	@echo "  make              - Build daemon binary"
+	@echo "  make              - Build daemon binary → $(BUILD_DIR)/native/touch-timeout"
 	@echo "  make version      - Generate version.h from VERSION_* variables"
 	@echo "  make test         - Run unit tests"
 	@echo "  make coverage     - Generate code coverage report"
@@ -125,8 +123,12 @@ version:
 	@echo "" >> include/version.h
 	@echo "#endif  // VERSION_H" >> include/version.h
 
+# Create build directories
+$(BUILD_DIR)/native:
+	@mkdir -p $@
+
 # Build main binary
-$(TARGET): $(OBJS)
+$(TARGET): $(OBJS) | $(BUILD_DIR)/native
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 # Pattern rule for object files
