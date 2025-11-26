@@ -12,6 +12,7 @@ touch-timeout
 tests/test_config
 tests/test_state
 tests/coverage/
+tests/*.txt
 coverage/
 
 # Coverage data
