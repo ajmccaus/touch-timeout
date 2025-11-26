@@ -135,9 +135,20 @@ log_success "Binary transferred"
 # Copy install script to RPi
 log_info "Transferring install script..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 scp -q "$SCRIPT_DIR/install-on-rpi.sh" "$RPI_USER@$RPI_IP:$RPI_STAGING_DIR/"
 ssh "$RPI_USER@$RPI_IP" "chmod +x $RPI_STAGING_DIR/install-on-rpi.sh"
 log_success "Install script transferred"
+
+# Copy systemd service file (optional, may not be used on minimal systems)
+log_info "Transferring systemd service file..."
+scp -q "$PROJECT_ROOT/systemd/touch-timeout.service" "$RPI_USER@$RPI_IP:$RPI_STAGING_DIR/" 2>/dev/null || \
+    log_warn "Systemd service file not found (optional)"
+
+# Copy config file
+log_info "Transferring config file..."
+scp -q "$PROJECT_ROOT/config/touch-timeout.conf" "$RPI_USER@$RPI_IP:$RPI_STAGING_DIR/" || \
+    log_warn "Config file not found"
 echo
 
 # Summary and next steps
@@ -150,10 +161,12 @@ echo "  1. SSH into RPi4:"
 echo "     ssh root@$RPI_IP"
 echo
 echo "  2. Run the installation script:"
-echo "     sudo $RPI_STAGING_DIR/install-on-rpi.sh"
+echo "     sudo ARCH=$ARCH $RPI_STAGING_DIR/install-on-rpi.sh"
 echo
 log_warn "The install script will:"
 echo "  - Install binary as: /usr/bin/touch-timeout-2.0.0-$ARCH"
 echo "  - Create symlink: /usr/bin/touch-timeout → binary"
-echo "  - Restart systemd service (if running)"
+echo "  - Install config: /etc/touch-timeout.conf (if not exists)"
+echo "  - Install systemd service (if systemd available)"
+echo "  - Restart service (if running)"
 echo

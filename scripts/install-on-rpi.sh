@@ -62,18 +62,27 @@ if [[ ! -f "$STAGING_DIR/touch-timeout" ]]; then
 fi
 
 # Detect binary architecture
-FILE_OUTPUT=$(file "$STAGING_DIR/touch-timeout")
-if echo "$FILE_OUTPUT" | grep -q "ARM aarch64"; then
-    ARCH="arm64"
-elif echo "$FILE_OUTPUT" | grep -q "ARM.*32-bit"; then
-    ARCH="arm32"
-elif echo "$FILE_OUTPUT" | grep -q "x86-64"; then
-    ARCH="x86_64"
-elif echo "$FILE_OUTPUT" | grep -q "Intel 80386"; then
-    ARCH="x86_32"
+# Accept ARCH as environment variable or try to detect
+if [ -n "$ARCH" ]; then
+    log_info "Using provided architecture: $ARCH"
+elif command -v file >/dev/null 2>&1; then
+    FILE_OUTPUT=$(file "$STAGING_DIR/touch-timeout")
+    if echo "$FILE_OUTPUT" | grep -q "ARM aarch64"; then
+        ARCH="arm64"
+    elif echo "$FILE_OUTPUT" | grep -q "ARM.*32-bit"; then
+        ARCH="arm32"
+    elif echo "$FILE_OUTPUT" | grep -q "x86-64"; then
+        ARCH="x86_64"
+    elif echo "$FILE_OUTPUT" | grep -q "Intel 80386"; then
+        ARCH="x86_32"
+    else
+        log_warn "Could not automatically detect architecture"
+        ARCH="unknown"
+    fi
 else
-    log_warn "Could not automatically detect architecture"
-    ARCH="unknown"
+    log_error "Architecture not specified and 'file' command not available"
+    echo "Usage: ARCH=arm32 $0  or  ARCH=arm64 $0"
+    exit 1
 fi
 
 # Extract version (hardcoded for v2.0.0)
@@ -101,13 +110,34 @@ if [[ ! -x "$CURRENT_LINK" ]]; then
     exit 1
 fi
 
-# Reload systemd and start service
-systemctl daemon-reload
-if ! systemctl start touch-timeout.service; then
-    log_error "Failed to start touch-timeout service"
-    exit 1
+# Install config file if present and not already installed
+if [[ -f "$STAGING_DIR/touch-timeout.conf" ]] && [[ ! -f "/etc/touch-timeout.conf" ]]; then
+    log_info "Installing config file..."
+    install -m 644 "$STAGING_DIR/touch-timeout.conf" "/etc/touch-timeout.conf"
+    log_success "Config installed: /etc/touch-timeout.conf"
+elif [[ -f "/etc/touch-timeout.conf" ]]; then
+    log_info "Config already exists: /etc/touch-timeout.conf (not overwriting)"
 fi
 
-log_success "Installation complete: $(readlink "$CURRENT_LINK")"
-log_info "View logs: journalctl -u touch-timeout.service -f"
-log_info "Rollback: ln -sf /usr/bin/touch-timeout-<VERSION>-<ARCH> /usr/bin/touch-timeout && sudo systemctl restart touch-timeout.service"
+# Install systemd service if systemd is available and service file is present
+if command -v systemctl >/dev/null 2>&1 && [[ -f "$STAGING_DIR/touch-timeout.service" ]]; then
+    log_info "Installing systemd service..."
+    install -m 644 "$STAGING_DIR/touch-timeout.service" "/etc/systemd/system/touch-timeout.service"
+    log_success "Service installed"
+fi
+
+# Reload systemd and start service (if systemd available)
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload
+    if ! systemctl start touch-timeout.service; then
+        log_error "Failed to start touch-timeout service"
+        exit 1
+    fi
+    log_success "Installation complete: $(readlink "$CURRENT_LINK")"
+    log_info "View logs: journalctl -u touch-timeout.service -f"
+    log_info "Rollback: ln -sf /usr/bin/touch-timeout-<VERSION>-<ARCH> /usr/bin/touch-timeout && sudo systemctl restart touch-timeout.service"
+else
+    log_success "Installation complete: $(readlink "$CURRENT_LINK")"
+    log_warn "systemd not available - service not started automatically"
+    log_info "Start manually or configure init system to run: $CURRENT_LINK"
+fi
