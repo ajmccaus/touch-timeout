@@ -5,7 +5,9 @@
       "Bash(make test:*)",
       "Bash(./test_state)",
       "Bash(make clean:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(chmod:*)",
+      "Bash(bash -n:*)"
     ],
     "deny": [],
     "ask": []
