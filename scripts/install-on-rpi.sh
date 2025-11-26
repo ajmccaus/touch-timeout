@@ -55,50 +55,39 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-# Verify binary exists
-if [[ ! -f "$STAGING_DIR/touch-timeout" ]]; then
-    log_error "Binary not found: $STAGING_DIR/touch-timeout"
+# Find versioned binary in staging directory
+BINARY_FILE=$(ls "$STAGING_DIR"/touch-timeout-*-* 2>/dev/null | head -1)
+if [[ -z "$BINARY_FILE" ]]; then
+    log_error "No versioned binary found in $STAGING_DIR/"
+    echo "Expected filename format: touch-timeout-VERSION-ARCH (e.g., touch-timeout-2.0.0-arm32)"
     exit 1
 fi
 
-# Detect binary architecture
-# Accept ARCH as environment variable or try to detect
-if [ -n "$ARCH" ]; then
-    log_info "Using provided architecture: $ARCH"
-elif command -v file >/dev/null 2>&1; then
-    FILE_OUTPUT=$(file "$STAGING_DIR/touch-timeout")
-    if echo "$FILE_OUTPUT" | grep -q "ARM aarch64"; then
-        ARCH="arm64"
-    elif echo "$FILE_OUTPUT" | grep -q "ARM.*32-bit"; then
-        ARCH="arm32"
-    elif echo "$FILE_OUTPUT" | grep -q "x86-64"; then
-        ARCH="x86_64"
-    elif echo "$FILE_OUTPUT" | grep -q "Intel 80386"; then
-        ARCH="x86_32"
-    else
-        log_warn "Could not automatically detect architecture"
-        ARCH="unknown"
-    fi
-else
-    log_error "Architecture not specified and 'file' command not available"
-    echo "Usage: ARCH=arm32 $0  or  ARCH=arm64 $0"
+# Extract filename without path
+BINARY_NAME=$(basename "$BINARY_FILE")
+
+# Parse version and architecture from filename
+# Format: touch-timeout-VERSION-ARCH
+if [[ ! "$BINARY_NAME" =~ ^touch-timeout-([0-9]+\.[0-9]+\.[0-9]+)-(arm32|arm64|x86_64|x86_32)$ ]]; then
+    log_error "Invalid binary filename format: $BINARY_NAME"
+    echo "Expected format: touch-timeout-VERSION-ARCH (e.g., touch-timeout-2.0.0-arm32)"
     exit 1
 fi
 
-# Extract version (hardcoded for v2.0.0)
-VERSION="2.0.0"
+VERSION="${BASH_REMATCH[1]}"
+ARCH="${BASH_REMATCH[2]}"
 
-# Construct versioned binary name
-VERSIONED_BINARY="${INSTALL_DIR}/touch-timeout-${VERSION}-${ARCH}"
+# Construct target paths
+VERSIONED_BINARY="${INSTALL_DIR}/${BINARY_NAME}"
 CURRENT_LINK="${INSTALL_DIR}/touch-timeout"
 
-log_info "Installing touch-timeout-${VERSION}-${ARCH}..."
+log_info "Installing ${BINARY_NAME}..."
 
 # Stop service if running (minimize systemctl calls)
 systemctl stop touch-timeout.service 2>/dev/null || true
 
 # Install versioned binary (without verbose output to save SD writes)
-install -m 755 "$STAGING_DIR/touch-timeout" "$VERSIONED_BINARY"
+install -m 755 "$BINARY_FILE" "$VERSIONED_BINARY"
 
 # Create or update symlink atomically
 ln -sf "$VERSIONED_BINARY" "${CURRENT_LINK}.new"

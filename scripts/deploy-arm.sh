@@ -127,9 +127,16 @@ ssh "$RPI_USER@$RPI_IP" "mkdir -p $RPI_STAGING_DIR && rm -f $RPI_STAGING_DIR/*"
 log_success "Staging directory ready"
 echo
 
-# Copy binary to RPi
-log_info "Transferring binary ($(du -h "$BINARY_PATH" | cut -f1))..."
-scp -q "$BINARY_PATH" "$RPI_USER@$RPI_IP:$RPI_STAGING_DIR/touch-timeout"
+# Get version from Makefile
+VERSION_MAJOR=$(grep "^VERSION_MAJOR" Makefile | awk '{print $3}')
+VERSION_MINOR=$(grep "^VERSION_MINOR" Makefile | awk '{print $3}')
+VERSION_PATCH=$(grep "^VERSION_PATCH" Makefile | awk '{print $3}')
+VERSION="${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}"
+
+# Copy binary to RPi with versioned name
+VERSIONED_BINARY="touch-timeout-${VERSION}-${ARCH}"
+log_info "Transferring binary as $VERSIONED_BINARY ($(du -h "$BINARY_PATH" | cut -f1))..."
+scp -q "$BINARY_PATH" "$RPI_USER@$RPI_IP:$RPI_STAGING_DIR/$VERSIONED_BINARY"
 log_success "Binary transferred"
 
 # Copy install script to RPi
@@ -161,11 +168,11 @@ echo "  1. SSH into RPi4:"
 echo "     ssh root@$RPI_IP"
 echo
 echo "  2. Run the installation script:"
-echo "     sudo ARCH=$ARCH $RPI_STAGING_DIR/install-on-rpi.sh"
+echo "     sudo $RPI_STAGING_DIR/install-on-rpi.sh"
 echo
 log_warn "The install script will:"
-echo "  - Install binary as: /usr/bin/touch-timeout-2.0.0-$ARCH"
-echo "  - Create symlink: /usr/bin/touch-timeout → binary"
+echo "  - Install binary: /usr/bin/$VERSIONED_BINARY"
+echo "  - Create symlink: /usr/bin/touch-timeout → $VERSIONED_BINARY"
 echo "  - Install config: /etc/touch-timeout.conf (if not exists)"
 echo "  - Install systemd service (if systemd available)"
 echo "  - Restart service (if running)"
