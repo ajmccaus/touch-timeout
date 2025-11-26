@@ -51,9 +51,34 @@ BINDIR = $(PREFIX)/bin
 SYSTEMD_UNIT_DIR = /etc/systemd/system
 CONFIG_DIR = /etc
 
-.PHONY: all clean install uninstall test coverage version
+.PHONY: all clean install uninstall test coverage version help
 
 all: version $(TARGET)
+
+# Display help information
+help:
+	@echo "Touch-timeout daemon build system (v$(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_PATCH))"
+	@echo ""
+	@echo "Targets:"
+	@echo "  make              - Build daemon binary"
+	@echo "  make version      - Generate version.h from VERSION_* variables"
+	@echo "  make test         - Run unit tests"
+	@echo "  make coverage     - Generate code coverage report"
+	@echo "  make install      - Install daemon, systemd service, and config"
+	@echo "  make uninstall    - Remove installed files (preserves config)"
+	@echo "  make clean        - Remove build artifacts"
+	@echo "  make help         - Display this help message"
+	@echo ""
+	@echo "Configuration:"
+	@echo "  PREFIX            - Installation prefix (default: /usr)"
+	@echo "  SYSTEMD_UNIT_DIR  - Systemd service directory (default: /etc/systemd/system)"
+	@echo "  CONFIG_DIR        - Config file directory (default: /etc)"
+	@echo ""
+	@echo "Build flags:"
+	@echo "  CFLAGS            - C compiler flags (default: -O2 -Wall -std=c17)"
+	@echo "  CC                - C compiler (default: gcc)"
+	@echo ""
+	@echo "Systemd support: $(if $(SYSTEMD_PKG),enabled,disabled - install libsystemd-dev)"
 
 # Generate version.h from VERSION_* variables
 version:

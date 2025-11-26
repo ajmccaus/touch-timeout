@@ -5,7 +5,7 @@
 # Supports code coverage with gcov/lcov
 
 CC = gcc
-CFLAGS = -Wall -Wextra -std=c11 -I../src -D_POSIX_C_SOURCE=200809L
+CFLAGS = -Wall -Wextra -std=c17 -I../src -D_POSIX_C_SOURCE=200809L
 COVERAGE_CFLAGS = --coverage -fprofile-arcs -ftest-coverage -g
 LDFLAGS = --coverage
 
