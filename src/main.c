@@ -10,7 +10,7 @@
  * - Timer (timerfd + CLOCK_MONOTONIC)
  * - Systemd integration (sd_notify + watchdog)
  *
- * VERSION: 2.0.0
+ * VERSION: See version.h (auto-generated from Makefile)
  */
 
 #include "config.h"
@@ -18,6 +18,7 @@
 #include "input.h"
 #include "state.h"
 #include "timer.h"
+#include "version.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,7 +47,6 @@ static inline int sd_watchdog_enabled(int unset_environment, uint64_t *usec) {
 }
 #endif
 
-#define VERSION "2.0.0"
 #define CONFIG_PATH "/etc/touch-timeout.conf"
 
 /* Signal handling */
@@ -101,7 +101,7 @@ int main(int argc, char *argv[]) {
 
     /* Initialize syslog */
     openlog("touch-timeout", LOG_PID | LOG_CONS, LOG_DAEMON);
-    syslog(LOG_INFO, "Starting touch-timeout v%s", VERSION);
+    syslog(LOG_INFO, "Starting touch-timeout v%s", VERSION_STRING);
 
     /* Setup signal handlers */
     if (setup_signals() < 0) {
