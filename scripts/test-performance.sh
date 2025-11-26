@@ -2,11 +2,17 @@
 #
 # test-performance.sh - Comprehensive performance testing for touch-timeout daemon
 #
-# Transfer to RPi with:
+# Transfer to RPi:
 #   scp scripts/test-performance.sh root@192.168.1.XXX:/tmp/
 #
-# Run on RPi:
+# Run on RPi (minimal output - default):
 #   ssh root@192.168.1.XXX "bash /tmp/test-performance.sh"
+#
+# Run with verbose output:
+#   ssh root@192.168.1.XXX "MINIMAL_OUTPUT=0 bash /tmp/test-performance.sh"
+#
+# Run from WSL2 and save results locally:
+#   ssh root@192.168.1.XXX "bash /tmp/test-performance.sh" > ~/projects/touch-timeout/test-results-$(date +%Y%m%d-%H%M%S).txt
 #
 # This script measures:
 # - CPU usage (idle and active)
@@ -18,6 +24,9 @@
 #
 
 set -e
+
+# Output mode: Set to 0 for verbose, 1 for minimal (default)
+MINIMAL_OUTPUT="${MINIMAL_OUTPUT:-1}"
 
 # Colors
 RED='\033[0;31m'
@@ -31,6 +40,7 @@ MONITOR_DURATION=30  # seconds to monitor for baseline
 TOUCH_TEST_DURATION=10  # seconds to simulate touch events
 
 log_info() {
+    [[ $MINIMAL_OUTPUT -eq 1 ]] && return
     echo -e "${BLUE}[INFO]${NC} $1"
 }
 
@@ -46,6 +56,10 @@ log_error() {
     echo -e "${RED}[FAIL]${NC} $1"
 }
 
+log_minimal() {
+    echo -e "$1"
+}
+
 # Find touch-timeout process
 PID=$(pgrep -x touch-timeout)
 if [ -z "$PID" ]; then
@@ -54,14 +68,20 @@ if [ -z "$PID" ]; then
 fi
 
 log_info "Found touch-timeout daemon (PID: $PID)"
+
+if [[ $MINIMAL_OUTPUT -eq 1 ]]; then
+    log_minimal "Performance test starting (PID: $PID, duration: ${MONITOR_DURATION}s)..."
+fi
 echo
 
 # ====================
 # Test 1: CPU Usage
 # ====================
-echo "=========================================="
-echo "Test 1: CPU Usage"
-echo "=========================================="
+if [[ $MINIMAL_OUTPUT -eq 0 ]]; then
+    echo "=========================================="
+    echo "Test 1: CPU Usage"
+    echo "=========================================="
+fi
 
 log_info "Measuring CPU usage over ${MONITOR_DURATION}s..."
 CPU_SAMPLES=()
@@ -91,9 +111,11 @@ echo
 # ====================
 # Test 2: Memory Usage
 # ====================
-echo "=========================================="
-echo "Test 2: Memory Usage"
-echo "=========================================="
+if [[ $MINIMAL_OUTPUT -eq 0 ]]; then
+    echo "=========================================="
+    echo "Test 2: Memory Usage"
+    echo "=========================================="
+fi
 
 MEM_START=$(ps -p $PID -o rss= | tr -d ' ')
 log_info "Initial memory (RSS): $((MEM_START / 1024)) MB"
@@ -118,9 +140,11 @@ echo
 # ====================
 # Test 3: SD Card Writes
 # ====================
-echo "=========================================="
-echo "Test 3: SD Card Write Activity"
-echo "=========================================="
+if [[ $MINIMAL_OUTPUT -eq 0 ]]; then
+    echo "=========================================="
+    echo "Test 3: SD Card Write Activity"
+    echo "=========================================="
+fi
 
 if [ -f /proc/$PID/io ]; then
     WRITE_START=$(grep write_bytes /proc/$PID/io | awk '{print $2}')
@@ -154,9 +178,11 @@ echo
 # ====================
 # Test 4: File Descriptors
 # ====================
-echo "=========================================="
-echo "Test 4: File Descriptor Usage"
-echo "=========================================="
+if [[ $MINIMAL_OUTPUT -eq 0 ]]; then
+    echo "=========================================="
+    echo "Test 4: File Descriptor Usage"
+    echo "=========================================="
+fi
 
 FD_START=$(ls /proc/$PID/fd 2>/dev/null | wc -l)
 log_info "Initial file descriptors: $FD_START"
@@ -183,9 +209,11 @@ echo
 # ====================
 # Test 5: System Calls
 # ====================
-echo "=========================================="
-echo "Test 5: System Call Frequency"
-echo "=========================================="
+if [[ $MINIMAL_OUTPUT -eq 0 ]]; then
+    echo "=========================================="
+    echo "Test 5: System Call Frequency"
+    echo "=========================================="
+fi
 
 if command -v strace >/dev/null 2>&1; then
     log_info "Tracing system calls for 5 seconds..."
@@ -209,9 +237,11 @@ echo
 # ====================
 # Test 6: Process Info
 # ====================
-echo "=========================================="
-echo "Test 6: Process Summary"
-echo "=========================================="
+if [[ $MINIMAL_OUTPUT -eq 0 ]]; then
+    echo "=========================================="
+    echo "Test 6: Process Summary"
+    echo "=========================================="
+fi
 
 log_info "Current process state:"
 ps aux | head -1
