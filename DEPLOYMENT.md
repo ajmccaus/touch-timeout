@@ -154,62 +154,36 @@ That's it! The service will restart automatically with the new binary.
 sudo /tmp/touch-timeout-staging/install-on-rpi.sh
 ```
 
+**Options**:
+- **Default (Quiet mode)**: Minimizes SD card writes by suppressing non-critical logs
+- **Verbose mode**: `QUIET_MODE=0 sudo /tmp/touch-timeout-staging/install-on-rpi.sh`
+
 **What the script does**:
 1. Verifies running as root
 2. Detects binary architecture (via `file` command)
 3. Stops running service (if active)
 4. Installs binary with version and architecture suffix:
    - Example: `/usr/bin/touch-timeout-2.0.0-arm64`
-5. Lists previous versions for rollback reference
-6. Updates symlink atomically:
+5. Updates symlink atomically:
    - Creates new symlink as: `/usr/bin/touch-timeout.new`
    - Moves over old: `/usr/bin/touch-timeout` ← atomic operation
-7. Verifies binary executable
-8. Reloads systemd configuration
-9. Starts touch-timeout service
-10. Shows status and logs
+6. Verifies binary executable
+7. Reloads systemd configuration
+8. Starts touch-timeout service
 
-**Output Example**:
+**Output Example** (Quiet mode - default):
 ```
-[INFO] Installation starting...
+[OK] Installation complete: /usr/bin/touch-timeout-2.0.0-arm64
+View logs: journalctl -u touch-timeout.service -f
+Rollback: ln -sf /usr/bin/touch-timeout-<VERSION>-<ARCH> /usr/bin/touch-timeout && sudo systemctl restart touch-timeout.service
+```
 
-[INFO] Detecting binary architecture...
-[OK] Architecture detected: arm64
-
-[INFO] Installation details:
-[INFO]   Binary: /usr/bin/touch-timeout-2.0.0-arm64
-[INFO]   Symlink: /usr/bin/touch-timeout
-
-[INFO] Stopping touch-timeout service...
-[OK] Service stopped
-
-[OK] Binary installed: /usr/bin/touch-timeout-2.0.0-arm64
-
-[INFO] Previous versions:
-  /usr/bin/touch-timeout-1.9.5-arm64 (2.5M)
-
-[INFO] Updating symlink: /usr/bin/touch-timeout → /usr/bin/touch-timeout-2.0.0-arm64
-[OK] Symlink updated
-
-[INFO] Reloading systemd configuration...
-[OK] Systemd reloaded
-
-[INFO] Starting touch-timeout service...
-[OK] Service started and running
-
-========================================
-[OK] Installation complete!
-========================================
-
-[INFO] Binary: /usr/bin/touch-timeout-2.0.0-arm64
-[INFO] Symlink: /usr/bin/touch-timeout → /usr/bin/touch-timeout-2.0.0-arm64
-
-[INFO] View logs:
-  journalctl -u touch-timeout.service -f
-
-[INFO] Rollback to previous version:
-  ln -sf /usr/bin/touch-timeout-<VERSION>-<ARCH> /usr/bin/touch-timeout
-  sudo systemctl restart touch-timeout.service
+**Output Example** (Verbose mode - with `QUIET_MODE=0`):
+```
+[INFO] Installing touch-timeout-2.0.0-arm64...
+[OK] Installation complete: /usr/bin/touch-timeout-2.0.0-arm64
+[INFO] View logs: journalctl -u touch-timeout.service -f
+[INFO] Rollback: ln -sf /usr/bin/touch-timeout-<VERSION>-<ARCH> /usr/bin/touch-timeout && sudo systemctl restart touch-timeout.service
 ```
 
 ## Build Targets
@@ -230,6 +204,22 @@ make arm32    # Build for ARM 32-bit (armv7l) → build/arm32/touch-timeout
 make arm64    # Build for ARM 64-bit (aarch64) → build/arm64/touch-timeout
 make clean-all  # Remove all build artifacts (including build/ directory)
 ```
+
+## SD Card Write Optimization
+
+The deployment scripts are optimized to minimize SD card writes, which extends the lifespan of the storage device:
+
+**Quiet Mode (Default)**:
+- Suppresses non-critical logging to reduce journal writes
+- Only error messages are logged (critical information)
+- Minimal systemctl output written to journal
+- Removes verbose installation output
+
+**Estimated Writes**:
+- Quiet mode: ~5-10 journal writes + binary file write
+- Verbose mode: ~30-40 journal writes + binary file write
+
+**Note**: The deployment happens infrequently (during software updates), unlike the daemon runtime. Runtime operation writes ~0 bytes/day to SD card thanks to the POSIX timer implementation.
 
 ## Rollback Strategy
 

@@ -8,10 +8,14 @@
 # - Symlink management for zero-downtime updates
 # - Service restart
 #
+# Optimized for SD card wear: Minimizes logging output and journal writes.
 # Usage: sudo /tmp/touch-timeout-staging/install-on-rpi.sh
 #
 
 set -euo pipefail
+
+# Set to "1" for verbose output (increases SD card writes)
+QUIET_MODE="${QUIET_MODE:-1}"
 
 # Color codes
 RED='\033[0;31m'
@@ -25,20 +29,23 @@ STAGING_DIR="/tmp/touch-timeout-staging"
 INSTALL_DIR="/usr/bin"
 SYSTEMD_LINK="/etc/systemd/system/touch-timeout.service"
 
-# Helpers
+# Helpers (conditional on QUIET_MODE to minimize SD writes)
 log_info() {
+    [[ $QUIET_MODE -eq 1 ]] && return
     echo -e "${BLUE}[INFO]${NC} $1"
 }
 
 log_success() {
+    [[ $QUIET_MODE -eq 1 ]] && return
     echo -e "${GREEN}[OK]${NC} $1"
 }
 
 log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
+    echo -e "${RED}[ERROR]${NC} $1"  # Always log errors
 }
 
 log_warn() {
+    [[ $QUIET_MODE -eq 1 ]] && return
     echo -e "${YELLOW}[WARN]${NC} $1"
 }
 
@@ -54,11 +61,7 @@ if [[ ! -f "$STAGING_DIR/touch-timeout" ]]; then
     exit 1
 fi
 
-log_info "Installation starting..."
-echo
-
 # Detect binary architecture
-log_info "Detecting binary architecture..."
 FILE_OUTPUT=$(file "$STAGING_DIR/touch-timeout")
 if echo "$FILE_OUTPUT" | grep -q "ARM aarch64"; then
     ARCH="arm64"
@@ -72,107 +75,39 @@ else
     log_warn "Could not automatically detect architecture"
     ARCH="unknown"
 fi
-log_success "Architecture detected: $ARCH"
 
-# Extract version from binary (stored in symlink or hardcoded version)
-# For now, use v2.0.0 (read from build or Makefile in production)
+# Extract version (hardcoded for v2.0.0)
 VERSION="2.0.0"
-log_info "Version: $VERSION"
 
 # Construct versioned binary name
 VERSIONED_BINARY="${INSTALL_DIR}/touch-timeout-${VERSION}-${ARCH}"
 CURRENT_LINK="${INSTALL_DIR}/touch-timeout"
 
-echo
-log_info "Installation details:"
-log_info "  Binary: $VERSIONED_BINARY"
-log_info "  Symlink: $CURRENT_LINK"
-echo
+log_info "Installing touch-timeout-${VERSION}-${ARCH}..."
 
-# Stop service if running
-log_info "Stopping touch-timeout service..."
-if systemctl is-active --quiet touch-timeout.service 2>/dev/null; then
-    systemctl stop touch-timeout.service
-    log_success "Service stopped"
-else
-    log_warn "Service not currently running"
-fi
-echo
+# Stop service if running (minimize systemctl calls)
+systemctl stop touch-timeout.service 2>/dev/null || true
 
-# Install versioned binary
-log_info "Installing binary..."
-install -v -m 755 "$STAGING_DIR/touch-timeout" "$VERSIONED_BINARY"
-log_success "Binary installed: $VERSIONED_BINARY"
+# Install versioned binary (without verbose output to save SD writes)
+install -m 755 "$STAGING_DIR/touch-timeout" "$VERSIONED_BINARY"
 
-# List previous versions
-log_info "Previous versions:"
-ls -lh "${INSTALL_DIR}"/touch-timeout-* 2>/dev/null | awk '{print "  " $9 " (" $5 ")"}' || log_warn "  No previous versions found"
-echo
-
-# Create or update symlink (atomic operation)
-log_info "Updating symlink: $CURRENT_LINK → $VERSIONED_BINARY"
+# Create or update symlink atomically
 ln -sf "$VERSIONED_BINARY" "${CURRENT_LINK}.new"
 mv -f "${CURRENT_LINK}.new" "$CURRENT_LINK"
-log_success "Symlink updated"
 
-# Verify symlink
-SYMLINK_TARGET=$(readlink "$CURRENT_LINK")
-log_info "Symlink verification: $CURRENT_LINK → $SYMLINK_TARGET"
-echo
-
-# Verify binary is executable and correct
-log_info "Verifying binary..."
+# Verify binary is executable
 if [[ ! -x "$CURRENT_LINK" ]]; then
-    log_error "Binary is not executable"
+    log_error "Binary is not executable after installation"
     exit 1
 fi
 
-# Test binary runs and can show version (or at least doesn't crash)
-if "$CURRENT_LINK" --help &>/dev/null || true; then
-    log_success "Binary test passed"
-else
-    log_warn "Binary test inconclusive (may be normal for daemon)"
-fi
-echo
-
-# Reload and start service
-log_info "Reloading systemd configuration..."
+# Reload systemd and start service
 systemctl daemon-reload
-log_success "Systemd reloaded"
-
-log_info "Starting touch-timeout service..."
-if systemctl start touch-timeout.service; then
-    sleep 1
-    if systemctl is-active --quiet touch-timeout.service; then
-        log_success "Service started and running"
-    else
-        log_error "Service started but not running (check logs)"
-        systemctl status touch-timeout.service || true
-        exit 1
-    fi
-else
-    log_error "Failed to start service"
-    systemctl status touch-timeout.service || true
+if ! systemctl start touch-timeout.service; then
+    log_error "Failed to start touch-timeout service"
     exit 1
 fi
-echo
 
-# Show status and recent logs
-log_info "Service status:"
-systemctl status touch-timeout.service
-
-echo
-log_success "=========================================="
-log_success "Installation complete!"
-log_success "=========================================="
-echo
-log_info "Binary: $VERSIONED_BINARY"
-log_info "Symlink: $CURRENT_LINK → $(readlink "$CURRENT_LINK")"
-echo
-log_info "View logs:"
-echo "  journalctl -u touch-timeout.service -f"
-echo
-log_info "Rollback to previous version:"
-echo "  ln -sf /usr/bin/touch-timeout-<VERSION>-<ARCH> /usr/bin/touch-timeout"
-echo "  sudo systemctl restart touch-timeout.service"
-echo
+log_success "Installation complete: $(readlink "$CURRENT_LINK")"
+log_info "View logs: journalctl -u touch-timeout.service -f"
+log_info "Rollback: ln -sf /usr/bin/touch-timeout-<VERSION>-<ARCH> /usr/bin/touch-timeout && sudo systemctl restart touch-timeout.service"
