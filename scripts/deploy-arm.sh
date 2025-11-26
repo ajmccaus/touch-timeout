@@ -22,7 +22,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m'  # No Color
 
 # Configuration
-RPI_IP_PREFIX="192.1.1"
+RPI_IP_PREFIX="192.168.1"
 RPI_USER="root"
 RPI_STAGING_DIR="/tmp/touch-timeout-staging"
 ARCH="${2:-arm64}"
@@ -49,8 +49,8 @@ log_warn() {
 if [[ $# -lt 1 ]]; then
     log_error "Usage: $0 <last_3_ip_octets> [arm32|arm64]"
     echo "Examples:"
-    echo "  $0 127           # Build and deploy arm64 to 192.1.1.127"
-    echo "  $0 127 arm32     # Build and deploy arm32 to 192.1.1.127"
+    echo "  $0 127           # Build and deploy arm64 to 192.168.1.127"
+    echo "  $0 127 arm32     # Build and deploy arm32 to 192.168.1.127"
     exit 1
 fi
 
