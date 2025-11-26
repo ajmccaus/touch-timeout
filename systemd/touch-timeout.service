@@ -5,18 +5,17 @@ After=multi-user.target systemd-modules-load.service systemd-backlight@.service
 StartLimitIntervalSec=0
 
 [Service]
-Type=notify
+Type=simple
 ExecStart=/usr/bin/touch-timeout
 Restart=on-failure
 RestartSec=5
 
-# Watchdog configuration
+# Watchdog configuration (requires systemd support in binary)
 # Daemon must send sd_notify("WATCHDOG=1") within this interval
 # If watchdog timeout occurs, systemd will restart the service
-WatchdogSec=30s
+# WatchdogSec=30s
 
 # Timeout configuration
-# Allow 10 seconds for startup (sd_notify "READY=1")
 TimeoutStartSec=10s
 # Allow 5 seconds for graceful shutdown
 TimeoutStopSec=5s
