@@ -14,7 +14,7 @@
 #include <stdbool.h>
 
 /* Timer handle - opaque structure */
-typedef struct timer_ctx timer_t;
+typedef struct timer_ctx timer_ctx_s;
 
 /*
  * Create timer
@@ -24,7 +24,7 @@ typedef struct timer_ctx timer_t;
  *
  * Returns: Timer handle on success, NULL on error
  */
-timer_t *timer_create_ctx(void);
+timer_ctx_s *timer_create_ctx(void);
 
 /*
  * Destroy timer
@@ -35,7 +35,7 @@ timer_t *timer_create_ctx(void);
  * Parameters:
  *   timer: Timer handle
  */
-void timer_destroy(timer_t *timer);
+void timer_destroy(timer_ctx_s *timer);
 
 /*
  * Get file descriptor for polling
@@ -47,7 +47,7 @@ void timer_destroy(timer_t *timer);
  *
  * Returns: File descriptor or -1 on error
  */
-int timer_get_fd(timer_t *timer);
+int timer_get_fd(timer_ctx_s *timer);
 
 /*
  * Arm timer (one-shot)
@@ -61,7 +61,7 @@ int timer_get_fd(timer_t *timer);
  *
  * Returns: 0 on success, -1 on error
  */
-int timer_arm(timer_t *timer, int seconds);
+int timer_arm(timer_ctx_s *timer, int seconds);
 
 /*
  * Check if timer expired
@@ -74,6 +74,6 @@ int timer_arm(timer_t *timer, int seconds);
  *
  * Returns: true if timer expired, false otherwise
  */
-bool timer_check_expiration(timer_t *timer);
+bool timer_check_expiration(timer_ctx_s *timer);
 
 #endif /* TOUCH_TIMEOUT_TIMER_H */

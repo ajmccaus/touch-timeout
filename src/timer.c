@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
+#include <stdint.h>
 #include <string.h>
 #include <syslog.h>
 #include <sys/timerfd.h>
@@ -23,8 +24,8 @@ struct timer_ctx {
 /*
  * Create timer
  */
-timer_t *timer_create_ctx(void) {
-    timer_t *timer = calloc(1, sizeof(timer_t));
+timer_ctx_s *timer_create_ctx(void) {
+    timer_ctx_s *timer = calloc(1, sizeof(timer_ctx_s));
     if (timer == NULL) {
         syslog(LOG_ERR, "timer_create_ctx: malloc failed");
         return NULL;
@@ -53,7 +54,7 @@ timer_t *timer_create_ctx(void) {
 /*
  * Destroy timer
  */
-void timer_destroy(timer_t *timer) {
+void timer_destroy(timer_ctx_s *timer) {
     if (timer == NULL)
         return;
 
@@ -66,7 +67,7 @@ void timer_destroy(timer_t *timer) {
 /*
  * Get file descriptor for polling
  */
-int timer_get_fd(timer_t *timer) {
+int timer_get_fd(timer_ctx_s *timer) {
     if (timer == NULL)
         return -1;
 
@@ -76,7 +77,7 @@ int timer_get_fd(timer_t *timer) {
 /*
  * Arm timer (one-shot)
  */
-int timer_arm(timer_t *timer, int seconds) {
+int timer_arm(timer_ctx_s *timer, int seconds) {
     if (timer == NULL || timer->timerfd <= 0) {
         syslog(LOG_ERR, "timer_arm: invalid timer");
         return -1;
@@ -114,7 +115,7 @@ int timer_arm(timer_t *timer, int seconds) {
 /*
  * Check if timer expired
  */
-bool timer_check_expiration(timer_t *timer) {
+bool timer_check_expiration(timer_ctx_s *timer) {
     if (timer == NULL || timer->timerfd <= 0)
         return false;
 

@@ -166,7 +166,7 @@ int main(int argc, char *argv[]) {
     }
 
     /* Create timer */
-    timer_t *timer = timer_create_ctx();
+    timer_ctx_s *timer = timer_create_ctx();
     if (timer == NULL) {
         syslog(LOG_ERR, "Failed to create timer");
         goto cleanup_input;
