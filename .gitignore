@@ -7,8 +7,21 @@ bin/
 touch-timeout
 *.a
 
+# Test artifacts
+tests/test_config
+tests/test_state
+tests/coverage/
+coverage/
+
+# Coverage data
+*.gcda
+*.gcno
+*.gcov
+*.dSYM/
+
 # Development
 .vscode/
+.claude/settings.local.json
 *.swp
 *.swo
 *~
