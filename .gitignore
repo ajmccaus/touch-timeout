@@ -4,6 +4,7 @@
 
 # Build outputs
 bin/
+build/
 touch-timeout
 *.a
 

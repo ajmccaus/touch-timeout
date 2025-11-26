@@ -51,7 +51,10 @@ BINDIR = $(PREFIX)/bin
 SYSTEMD_UNIT_DIR = /etc/systemd/system
 CONFIG_DIR = /etc
 
-.PHONY: all clean install uninstall test coverage version help
+.PHONY: all clean install uninstall test coverage version help arm32 arm64 clean-all
+
+# Build directory
+BUILD_DIR = build
 
 all: version $(TARGET)
 
@@ -79,6 +82,27 @@ help:
 	@echo "  CC                - C compiler (default: gcc)"
 	@echo ""
 	@echo "Systemd support: $(if $(SYSTEMD_PKG),enabled,disabled - install libsystemd-dev)"
+	@echo ""
+	@echo "Cross-compilation:"
+	@echo "  make arm32         - Build for ARM 32-bit (armv7l) → $(BUILD_DIR)/arm32/touch-timeout"
+	@echo "  make arm64         - Build for ARM 64-bit (aarch64) → $(BUILD_DIR)/arm64/touch-timeout"
+	@echo ""
+	@echo "Deployment:"
+	@echo "  scripts/deploy-arm.sh 192.1.1.XXX [arm32|arm64]"
+	@echo "    - Compile and deploy to RPi4 staging location (/tmp/touch-timeout-staging/)"
+	@echo "    - Then SSH to RPi and run: sudo /tmp/touch-timeout-staging/install-on-rpi.sh"
+
+# Cross-compilation targets for ARM
+# Output organized into build/ subdirectories
+arm32: version
+	@mkdir -p $(BUILD_DIR)/arm32
+	$(MAKE) clean
+	$(MAKE) CC=arm-linux-gnueabihf-gcc CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -std=c17 -D_POSIX_C_SOURCE=200809L -Iinclude -march=armv7-a -mfpu=neon" TARGET=$(BUILD_DIR)/arm32/touch-timeout all
+
+arm64: version
+	@mkdir -p $(BUILD_DIR)/arm64
+	$(MAKE) clean
+	$(MAKE) CC=aarch64-linux-gnu-gcc CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -std=c17 -D_POSIX_C_SOURCE=200809L -Iinclude -march=armv8-a" TARGET=$(BUILD_DIR)/arm64/touch-timeout all
 
 # Generate version.h from VERSION_* variables
 version:
@@ -117,11 +141,15 @@ $(SRC_DIR)/input.o: $(SRC_DIR)/input.h
 $(SRC_DIR)/state.o: $(SRC_DIR)/state.h
 $(SRC_DIR)/timer.o: $(SRC_DIR)/timer.h
 
-# Clean build artifacts
+# Clean build artifacts (current target only)
 clean:
 	rm -f $(TARGET) $(OBJS)
 	rm -f include/version.h
 	$(MAKE) -C tests clean
+
+# Clean all artifacts including cross-compiled builds
+clean-all: clean
+	rm -rf $(BUILD_DIR)
 
 # Run unit tests
 test:
