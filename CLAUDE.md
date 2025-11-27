@@ -8,6 +8,91 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Currently on the `refactoring-v2` branch (v2.0.0) implementing a modular architecture. The `main` branch contains the v1.x monolithic implementation.
 
+## Development Guidelines
+- Use clear variable names
+- Comment complex logic
+- Test on real Mac before committing
+- Explain all system API calls
+
+## When I Approve Your Changes
+Before I approve, answer:
+1. What does this code do?
+2. Why this approach vs. simpler alternatives?
+3. What could break?
+4. How do I test it?
+
+## For New Developers
+I'm learning to code. When explaining anything:
+- Define technical terms
+- Explain WHY we chose this approach
+- Show alternatives I could have used
+- Break down complex functions step-by-step
+
+## Approval Workflow (CRITICAL)
+Before I can approve your changes, you MUST:
+
+1. **Explain the change** in plain language
+2. **Show me alternatives** you considered
+3. **Identify risks** - what could break?
+4. **Provide test steps** - how do I verify this works?
+
+If I don't understand something, I'll ask "ELI5" (Explain Like I'm 5)
+and you'll break it down further with analogies.
+```
+
+**In your Claude Code prompts:**
+```
+"Add a notification feature. Before you code:
+1. Explain your plan
+2. Show me the pros/cons of 2-3 approaches  
+3. Recommend one with reasoning
+4. Wait for my approval to proceed"
+
+
+## Coding Standards and Best Practices
+
+This project follows production-ready embedded C daemon standards to ensure robust, maintainable, and secure code. The following section documents the standards and conventions used.
+
+### Language Standard
+
+**C17 (ISO/IEC 9899:2018)** with POSIX compliance flags:
+```bash
+gcc -std=c17 -D_POSIX_C_SOURCE=200809L ...
+```
+
+**Why C17?**
+- Modern standard with bug fixes and clarifications over C11
+- Broad compiler support across embedded toolchains (GCC, Clang)
+- Provides stability without requiring cutting-edge features
+- Backward compatible with C11 code
+
+### Security Standards Compliance
+
+This project implements best practices from multiple security standards:
+
+**CERT C Coding Standard** (SEI Carnegie Mellon)
+- **SIG31-C**: Signal handlers use `volatile sig_atomic_t` (✓ implemented)
+- **INT32-C**: Integer overflow protection in timeout arithmetic (✓ implemented)
+- **FIO32-C**: Path traversal protection for device/backlight paths (✓ implemented)
+- **ERR06-C**: Graceful error handling instead of assertions in production paths (✓ implemented)
+
+**POSIX Compliance**
+- Signal handlers follow async-signal-safety rules (only set flags, no complex operations)
+- systemd-compatible daemon initialization (no double-fork, SIGTERM handling)
+- `sigaction()` used instead of deprecated `signal()`
+
+**CWE/OWASP Embedded Security**
+- Buffer overflow prevention via bounds checking
+- Path validation (no directory traversal)
+- Safe string handling
+
+**MISRA C (Optional)**
+- Code follows many MISRA C:2012 guidelines (safety-critical systems subset)
+- No dynamic memory allocation (malloc/free) - uses static allocation
+- Explicit error checking on all system calls
+- No use of implicit type conversions
+
+
 ## Build Commands
 
 ```bash
