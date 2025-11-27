@@ -146,7 +146,7 @@ manual procedure to copy the key directly from your WSL2 machine
 1. On WSL2, create a temporary file with just the key:
 cat ~/.ssh/id_rsa.pub > /tmp/pubkey.txt
 2. Now copy it using SCP [use sudo if not logging in as root]:
-scp /tmp/pubkey.txt [username]@[IP_ADDRESS]:/root/.ssh/authorized_keys
+scp /tmp/pubkey.txt [username]@[IP_ADDRESS]:~/.ssh/authorized_keys
 3. Enter the password when prompted. 
 4. Then enter [use sudo if not logging in as root]:
 ssh [username]@[IP_ADDRESS] "chmod 600 ~/.ssh/authorized_keys"
