@@ -1,6 +1,8 @@
 # Installation
 
-## Quick Install
+**Branch Context:** Instructions below are for the `main` branch (v1.x monolithic). For `refactoring-v2` branch (v2.0.0 modular), use the Makefile build system as described in REFACTORING.md.
+
+## Quick Install (v1.x - main branch)
 
 ```bash
 # Clone repository
@@ -13,7 +15,7 @@ sudo install -m 755 touch-timeout /usr/bin/
 sudo install -m 644 touch-timeout.service /etc/systemd/system/
 sudo install -m 644 touch-timeout.conf /etc/
 
-# Using Makefile if installing on same system as compiler
+# Using Makefile (v2.0 modular - refactoring-v2 branch)
 make
 sudo make install
 

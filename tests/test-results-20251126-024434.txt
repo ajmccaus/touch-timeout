@@ -1,0 +1,72 @@
+[0;34m[INFO][0m Found touch-timeout daemon (PID: 31490)
+
+==========================================
+Test 1: CPU Usage
+==========================================
+[0;34m[INFO][0m Measuring CPU usage over 30s...
+[0;34m[INFO][0m Average CPU usage: 0%
+[0;32m[PASS][0m CPU usage is excellent (<1%)
+
+==========================================
+Test 2: Memory Usage
+==========================================
+[0;34m[INFO][0m Initial memory (RSS): 0 MB
+[0;34m[INFO][0m Monitoring memory for 30s to detect leaks...
+[0;34m[INFO][0m Final memory (RSS): 0 MB
+[0;32m[PASS][0m No memory leak detected (growth: 0KB)
+
+==========================================
+Test 3: SD Card Write Activity
+==========================================
+[0;34m[INFO][0m Initial write bytes: 0
+0
+[0;34m[INFO][0m Monitoring write activity for 30s...
+[0;34m[INFO][0m Final write bytes: 0
+0
+
+==========================================
+Test 4: File Descriptor Usage
+==========================================
+[0;34m[INFO][0m Initial file descriptors: 7
+[0;34m[INFO][0m Monitoring FD usage for 30s...
+[0;34m[INFO][0m Final file descriptors: 7
+[0;32m[PASS][0m File descriptor count stable (no leaks)
+[0;34m[INFO][0m Open file descriptors:
+lr-x------ 1 root root 64 Nov 26 02:32 0 -> /dev/null
+lrwx------ 1 root root 64 Nov 26 02:32 1 -> socket:[1926165]
+lrwx------ 1 root root 64 Nov 26 02:32 2 -> socket:[1926165]
+lrwx------ 1 root root 64 Nov 26 02:11 3 -> socket:[1924519]
+lrwx------ 1 root root 64 Nov 26 02:11 4 -> /sys/devices/platform/rpi_backlight/backlight/rpi_backlight/brightness
+lr-x------ 1 root root 64 Nov 26 02:32 5 -> /dev/input/event0
+lrwx------ 1 root root 64 Nov 26 02:32 6 -> anon_inode:[timerfd]
+
+==========================================
+Test 5: System Call Frequency
+==========================================
+[1;33m[WARN][0m strace not available - skipping syscall analysis
+
+==========================================
+Test 6: Process Summary
+==========================================
+[0;34m[INFO][0m Current process state:
+USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
+USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
+root     31490  0.0  0.0   1988   196 ?        Ss   02:11   0:00 /usr/bin/touch-timeout
+
+[0;34m[INFO][0m Resource limits:
+Max cpu time              unlimited            unlimited            seconds   
+Max open files            64                   64                   files     
+
+==========================================
+Performance Test Summary
+==========================================
+Duration: 30s baseline monitoring
+PID: 31490
+
+Results:
+  - CPU (avg): 0%
+  - Memory: 0 MB → 0 MB (Δ 0KB)
+  - SD writes: N/A bytes
+  - File descriptors: 7 → 7 (Δ 0)
+
+[0;32m[PASS][0m All performance tests passed!

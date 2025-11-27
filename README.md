@@ -1,6 +1,8 @@
 # touch-timeout
 Lightweight touchscreen backlight manager for Raspberry Pi 7" displays. Automatically dims and powers off the display during inactivity, instantly restoring on touch. Optimized for minimal Linux distributions like HifiBerry OS.
 
+**Branch Context:** You are on the `refactoring-v2` branch (v2.0.0 modular architecture). The roadmap below describes the `main` branch (v1.x monolithic). See REFACTORING.md for v2.0 details.
+
 ## Features
 
 - **Zero-configuration defaults**: Works out-of-box with sensible settings
@@ -35,6 +37,40 @@ Benchmarked on Raspberry Pi 4 (1.5GHz ARM Cortex-A72):
 | **I/O efficiency** | Cached | No redundant sysfs writes |
 
 Tested over 24+ hours continuous operation with no performance degradation.
+
+## Performance Testing
+
+Quick manual tests on the RPi:
+
+```bash
+# Get process ID
+PID=$(pgrep touch-timeout)
+
+# CPU and memory usage
+ps aux | grep touch-timeout
+
+# Detailed resource usage
+top -b -n 1 -p $PID
+
+# SD card writes (run twice with delay to measure delta)
+grep write_bytes /proc/$PID/io
+
+# File descriptor count (should stay constant)
+ls /proc/$PID/fd | wc -l
+
+# System call count over 10 seconds
+timeout 10 strace -c -p $PID 2>&1 | tail -20
+```
+
+For comprehensive automated testing, use the performance test script:
+
+```bash
+# Transfer script to RPi
+scp scripts/test-performance.sh root@192.168.1.XXX:/tmp/
+
+# Run on RPi
+ssh root@192.168.1.XXX "bash /tmp/test-performance.sh"
+```
 
 ## Configuration
 
