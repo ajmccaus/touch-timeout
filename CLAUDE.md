@@ -1,391 +1,293 @@
 # CLAUDE.md
 
-## Purpose
-
-This file serves as Claude Code's project memory, automatically loaded to understand touch-timeout's architecture, standards, and conventions. It documents stable principles that guide consistent code across sessions and versions.
-
-## Audience
-
-**Claude Code**: Learns project standards, constraints, patterns, and anti-patterns when generating or reviewing code.
-
-**Human Developers**: Reference for coding conventions, architectural principles, build/test commands, and project constraints.
-
-**Code Reviewers**: Compliance checklist and rationale for design decisions.
-
----
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
 
-touch-timeout is a lightweight touchscreen backlight manager for Raspberry Pi 7" displays. It automatically dims and powers off the display during inactivity, instantly restoring brightness on touch. Optimized for minimal Linux distributions like HifiBerry OS.
+**touch-timeout** is a lightweight touchscreen backlight manager daemon for Raspberry Pi 7" displays. It automatically dims and powers off the display during inactivity and instantly restores brightness on touch.
+
+Currently on the `refactoring-v2` branch (v2.0.0) implementing a modular architecture. The `main` branch contains the v1.x monolithic implementation.
 
 ## Build Commands
 
 ```bash
-# Build
-make
+# Native build (x86_64)
+make              # Build daemon → build/native/touch-timeout
+make test         # Run 50 unit tests (config + state modules)
+make coverage     # Generate lcov coverage report
+make clean        # Remove build artifacts
 
-# Or manually with gcc
-gcc -O2 -Wall -Wextra -o touch-timeout touch-timeout.c
+# Cross-compilation (ARM)
+make arm32        # Build for ARMv7 → build/arm32/touch-timeout
+make arm64        # Build for ARM64 (RPi4) → build/arm64/touch-timeout
+make clean-all    # Remove all build artifacts
 
-# Install (requires sudo)
-sudo make install
+# Deployment
+make install      # Install to system (requires sudo)
+```
 
-# Clean build artifacts
-make clean
+## Testing
 
-# Run unit tests
+```bash
+# Run all tests
 make test
 
-# Run tests with coverage report
+# Run specific test executable
+./tests/test_state      # State machine tests (21 tests)
+./tests/test_config     # Configuration parsing tests (29 tests)
+
+# Generate coverage report
 make coverage
+# View: lcov -l coverage.info | head -30
+```
+
+## Rapid Development Workflow
+
+```bash
+# Quick build + test cycle
+make clean && make test
+
+# Single test module
+./tests/test_config 2>&1 | grep -A5 "FAIL"
+
+# Coverage check for specific file
+gcov src/state.c
 ```
 
 ## Architecture
 
-### Current State
+### Modular Design (6 Independent Modules)
 
-**v1.0.0 - Stable Release** (main branch, hardware tested)
-- Single-file: `touch-timeout.c` (~500 lines monolithic)
-- Production-ready on Raspberry Pi 4 with 7" touchscreen
+```
+src/
+├── main.c         - Event loop orchestrator (poll-based)
+├── state.c/h      - Pure state machine (FULL → DIMMED → OFF)
+├── config.c/h     - Table-driven config parser
+├── display.c/h    - Backlight hardware abstraction
+├── input.c/h      - Touch input device abstraction
+└── timer.c/h      - POSIX timerfd wrapper
+```
 
-**v1.0.2 - In Development** (main branch, unit tested only)
-- CERT C security hardening
-- Awaiting hardware validation before release
+### Key Design Patterns
 
-**v2.0.0 - In Development** (refactoring-v2 branch)
-- Modular architecture: `src/main.c`, `src/state.c`, `src/config.c`, `src/input.c`, `src/display.c`, `src/timer.c`
-- POSIX timers (timerfd + CLOCK_MONOTONIC)
-- systemd integration (sd_notify, watchdog)
+**Event-Driven I/O**: `poll()` waits on two file descriptors (input + timer). When touch is detected or timer expires, the state machine updates, triggering display HAL calls. Zero CPU usage while idle.
 
-### Architectural Principles
+**Hardware Abstraction Layers**: Display and input modules isolate Linux-specific APIs (sysfs, `/dev/input`) for portability and testing. Pure state machine has zero I/O dependencies, enabling unit testing without hardware.
 
-**State Machine**
-- Three states: FULL brightness → DIMMED → OFF
-- Transitions on: user input, timeout expiration
-- Signal handlers only set flags; main loop processes state changes
+**Table-Driven Configuration**: `config.c` uses descriptor tables for all parameter types. Adding a parameter requires one table entry + test.
 
-**Error Handling**
-- All system calls checked (return value + errno)
-- Graceful degradation, no production assertions
-- Errors logged, daemon continues operation
+**Brightness Caching**: `display.c` caches current brightness to skip redundant sysfs writes (~90% write reduction vs v1.x).
 
-**Memory Safety**
-- Zero dynamic allocation (no malloc/free)
-- Static/stack buffers only
-- Predictable embedded behavior
+### Data Flow
+
+```
+Input Event → Input HAL → State Machine → Display HAL → /sys/class/backlight/
+Timer Expiry → Timer HAL → State Machine → Display HAL → /sys/class/backlight/
+```
+
+### State Machine States
+
+- **FULL**: Display at configured brightness
+- **DIMMED**: Brightness reduced to `brightness / 10` (min 10)
+- **OFF**: Brightness = 0
+
+Transitions triggered by:
+- Touch input → restore FULL, reset timers
+- Timeout at `dim_percent` of `off_timeout` → transition to DIMMED
+- Timeout at `off_timeout` → transition to OFF
 
 ## Configuration
 
-Runtime config: `/etc/touch-timeout.conf` (see `config/touch-timeout.conf` for template)
+Default config: `/etc/touch-timeout.conf` (see `config/touch-timeout.conf` for example)
 
-Key settings: `brightness`, `off_timeout`, `dim_percent`, `poll_interval`, `backlight`, `device`
+Key parameters:
+- `brightness`: Active brightness (15-255, recommend ≤200)
+- `off_timeout`: Seconds until screen off (min: 10, default: 300)
+- `dim_percent`: When to dim (10-100% of off_timeout, default: 50)
+- `device`: Touch input device in `/dev/input/` (default: event0)
+- `backlight`: Device name in `/sys/class/backlight/` (default: rpi_backlight)
 
-## Testing
+## Testing Infrastructure
 
-**Unit tests** (`tests/`): Tests pure functions (`trim`, `safe_atoi`, `load_config`) and validates constants/calculations. Uses `#include "touch-timeout.c"` pattern to access static functions. Run with `make test` or `make coverage`.
+### Unit Tests (50 total)
 
-**Hardware testing**: This is a Raspberry Pi-specific daemon. To test on target:
-1. Cross-compile or build directly on RPi
-2. Install systemd service from `systemd/touch-timeout.service`
-3. Check logs: `sudo journalctl -u touch-timeout.service -f`
+**test_state.c** (21 tests):
+- State transitions on touch/timeout
+- Clock handling and timer resets
+- Getter functions and initialization
 
-## Important Constraints
+**test_config.c** (29 tests):
+- Default initialization
+- Config file parsing (int, string parameters)
+- Range validation and overflow protection
+- Safe integer parsing (`safe_atoi`)
+- Security: path traversal prevention
 
-- Brightness values >200 are acceptable but will reduce brightness on RPi 7" official touchscreen
-- Minimum brightness is 15 (avoids flicker), minimum dim brightness is 10
-- Off timeout must be >= 10 seconds (design decision for user experience)
-- Graceful error handling (no asserts in production paths)
+### Test Categories
 
----
+- **Pure Logic Tests**: State machine tests require no hardware mocking (zero I/O)
+- **Integration Tests**: Config module tests mock file I/O via test fixtures
+- **Coverage**: Use `make coverage` to measure code coverage
 
-## Coding Standards and Best Practices
+### Performance Testing
 
-This project follows production-ready embedded C daemon standards to ensure robust, maintainable, and secure code. The following section documents the standards and conventions used.
+Run on device: `scp scripts/test-performance.sh root@[IP_ADDRESS]:/tmp/ && ssh root@[IP_ADDRESS] "bash /tmp/test-performance.sh"`
 
-### Language Standard
+Measures: CPU usage, memory (RSS), SD card write activity, file descriptor leaks.
 
-**C17 (ISO/IEC 9899:2018)** with POSIX compliance flags:
+## Security & Compliance
+
+**CERT C Compliance:**
+- INT31-C: Range validation on all integer inputs
+- INT32-C: Overflow prevention in calculations
+- FIO32-C: Path traversal protection
+- STR31-C: Buffer overflow prevention
+- ERR06-C: Graceful error handling (no assertions in hot paths)
+
+**Defensive Programming:**
+- All public functions validate parameters
+- No assumptions about device max_brightness
+- Safe string parsing via `safe_atoi()`
+
+## Cross-Compilation
+
+### Prerequisites
+
 ```bash
-gcc -std=c17 -D_POSIX_C_SOURCE=200809L ...
+sudo apt-get install gcc-arm-linux-gnueabihf gcc-aarch64-linux-gnu
 ```
 
-**Why C17?**
-- Modern standard with bug fixes and clarifications over C11
-- Broad compiler support across embedded toolchains (GCC, Clang)
-- Provides stability without requiring cutting-edge features
-- Backward compatible with C11 code
+### Build for RPi4 (ARM64)
 
-### Security Standards Compliance
+```bash
+make arm64  # → build/arm64/touch-timeout
+```
 
-This project implements best practices from multiple security standards:
+### Deployment to RPi4 over TCP-IP
 
-**CERT C Coding Standard** (SEI Carnegie Mellon)
-- **SIG31-C**: Signal handlers use `volatile sig_atomic_t` (✓ implemented)
-- **INT32-C**: Integer overflow protection in timeout arithmetic (✓ implemented)
-- **FIO32-C**: Path traversal protection for device/backlight paths (✓ implemented)
-- **ERR06-C**: Graceful error handling instead of assertions in production paths (✓ implemented)
+```bash
+./scripts/deploy-arm.sh [IP_ADDRESS] arm64
+ssh root@[IP_ADDRESS] "sudo /tmp/touch-timeout-staging/install-on-rpi.sh"
+```
 
-**POSIX Compliance**
-- Signal handlers follow async-signal-safety rules (only set flags, no complex operations)
-- systemd-compatible daemon initialization (no double-fork, SIGTERM handling)
-- `sigaction()` used instead of deprecated `signal()`
+See DEPLOYMENT.md for detailed workflow.
 
-**CWE/OWASP Embedded Security**
-- Integer overflow protection
-- Buffer overflow prevention via bounds checking
-- Path validation (no directory traversal)
-- Safe string handling
+## Code Organization
 
-**MISRA C (Optional)**
-- Code follows many MISRA C:2012 guidelines (safety-critical systems subset)
-- No dynamic memory allocation (malloc/free) - uses static allocation
-- Explicit error checking on all system calls
-- No use of implicit type conversions
+### Module Interfaces
 
-### Naming Conventions
-
-**Type Definitions** (Structs, Enums, Unions)
-- **Default**: Use typedef for all custom types
-- **Structs**: End with `_s` suffix (e.g., `typedef struct display_state_s { ... } display_state_s;`)
-- **Enums**: End with `_e` suffix (e.g., `typedef enum display_state_e { ... } display_state_e;`)
-- **Rationale**: Avoids POSIX `_t` namespace conflicts while maintaining type safety and self-documenting code
-- **Enum values**: `SCREAMING_SNAKE_CASE` with context prefix (e.g., `STATE_FULL`, `STATE_DIMMED`)
-
-**Function Names**
-- Format: `snake_case` (lowercase with underscores)
-- Static functions: Same as public, encapsulation via static keyword
-- Module prefixes: Use for public APIs (e.g., `display_set_brightness()`)
-
-**Variable Names**
-- Local variables: `snake_case` (e.g., `current_brightness`, `timeout_seconds`)
-- Static file-scope variables: `snake_case` (e.g., `static int display_fd;`)
-- **Avoid**: Global variables; use static file-scope instead
-- Rationale: Single-source-of-truth principle, encapsulation, testability
-
-**Constants and Macros**
-- Format: `SCREAMING_SNAKE_CASE` (e.g., `MIN_BRIGHTNESS`, `CONFIG_PATH`)
-- Definition location: Top of file or header, grouped logically
-- Documentation: Include brief comment explaining the constant's purpose and constraints
-
-### Self-Documenting Code
-
-**Magic Number Elimination**
-- Every constant value must be named and defined once
-- Include rationale in comment (e.g., why value is 15, not 10)
-- Example:
-  ```c
-  #define MIN_BRIGHTNESS  15  // Avoids flicker on RPi 7" display (per datasheet)
-  #define MAX_BRIGHTNESS  200 // Hardware limitation, see errata Section 4.2
-  ```
-
-**Variable Naming That Conveys Intent**
-- Names should answer: "What is this?" and "Why does it exist?"
-- Use full words, not abbreviations (e.g., `current_brightness` not `br`)
-- Suffixes convey meaning: `_fd` for file descriptors, `_count`, `_timeout`, `_seconds`
-
-**Function Purpose in Signature**
-- Function name and parameters should be self-explanatory
-- Avoid cryptic abbreviations in public APIs
-- Example: `int set_brightness(struct display_state *state, int value);` is clear
-
-### Documentation Standards
-
-**Comment Style (Hybrid C++/C)**
-- `//` for inline code comments and brief explanations
-- `/* */` for multi-line block comments and complex logic descriptions
-- `/** */` for Doxygen function documentation
-- Rationale: C++ style comments are C99+ compliant, concise for single-line use
-
-**Function Documentation (Doxygen)**
-- Location: Immediately before function definition
-- Required tags: `@brief`, `@param`, `@return`, `@note` (if applicable)
-
-Example:
+**state.h** - Pure state machine:
 ```c
-/**
- * @brief Set backlight brightness with caching to prevent redundant hardware writes
- *
- * Only writes to sysfs if brightness differs from cached value.
- * Prevents excessive I/O on battery-powered devices.
- *
- * @param[in] state   Display state structure (must not be NULL)
- * @param[in] value   Brightness value 0-255, subject to min/max constraints
- * @return 0 on success, -1 on write error (check errno)
- * @note Thread-unsafe: must be called from single-threaded context
- */
+state_t *state_create(int on_timeout, int dim_timeout);
+void state_handle_touch(state_t *state);
+void state_handle_timeout(state_t *state);
+int state_get_brightness(state_t *state);
 ```
 
-**Code Comments**
-- Explain the "why", not the "what"
-- Document design decisions, trade-offs, non-obvious constraints
-- Reference specifications, standards, or bug numbers
-- Avoid obvious comments
-
-Example:
+**config.h** - Configuration management:
 ```c
-// Poll interval tuned for responsive touch while minimizing CPU wake-ups
-#define POLL_INTERVAL_MS  100
-
-/* Brightness >200 causes unexpected PWM behavior on RPi 7" official touchscreen
-   due to hardware limitation (errata Section 4.2). Empirically validated. */
-#define MAX_SAFE_BRIGHTNESS  200
+int config_load_from_file(const char *path, config_t *config);
+void config_set_defaults(config_t *config);
 ```
 
-### Code Readability and Maintainability
-
-**Line Length**
-- Soft limit: 80 characters (traditional terminal editors)
-- Hard limit: 120 characters (modern widescreen displays acceptable)
-- Rationale: Balance between old tools and modern development practices
-
-**Function Complexity**
-- Target cyclomatic complexity: < 10-15 decision points per function
-- Functions exceeding 30-50 lines should be split into helpers
-- Deep nesting (> 3 levels) indicates need for extraction
-- Most functions in this codebase are well-sized (10-50 lines) ✓
-
-**Header File Organization**
-- Include guards: `#ifndef FILENAME_H` / `#define FILENAME_H` / `#endif`
-- Order: System includes first, then local includes
-- Forward declarations: Use for struct pointers to minimize dependencies
-- API design: Public functions clearly separated from internal helpers
-
-**Example Header Layout**
+**display.h** - Backlight HAL:
 ```c
-#ifndef DISPLAY_MANAGER_H
-#define DISPLAY_MANAGER_H
-
-#include <time.h>
-#include <stdint.h>
-
-// Forward declarations
-struct input_event;
-
-// Constants
-#define DISPLAY_MAX_BRIGHTNESS  255
-
-// Type definitions
-struct display_state {
-    int brightness;
-    time_t last_input;
-};
-
-// Public API
-int display_init(struct display_state *state, const char *backlight_path);
-int display_set_brightness(struct display_state *state, int value);
-
-#endif  // DISPLAY_MANAGER_H
+display_t *display_open(const char *backlight_name);
+int display_set_brightness(display_t *display, int brightness);
+void display_close(display_t *display);
 ```
 
-### Memory Safety
-
-**Stack vs. Heap**
-- **Preference**: Stack allocation (automatic, no fragmentation)
-- **Avoidance**: Dynamic allocation (malloc/free) - use static buffers instead
-- **Rationale**: Embedded systems need predictable memory behavior
-- **Current implementation**: No dynamic allocation ✓
-
-**Buffer Overflow Prevention**
-- Always check array bounds before access
-- Use safe string functions with size parameters
-- Validate all external input (config files, sysfs reads)
-- Example: Safe strcpy
-  ```c
-  size_t len = strlen(src);
-  if (len >= sizeof(dest)) {
-      syslog(LOG_ERR, "Buffer too small: need %zu bytes, have %zu",
-             len, sizeof(dest));
-      return -1;
-  }
-  memcpy(dest, src, len + 1);
-  ```
-
-### Error Handling
-
-**Return Value Checking**
-- **Every** system call and function return value must be checked
-- Ignore errors only if deliberately implemented (with explicit comment)
-- Pattern: Check return value, test errno if needed, propagate or handle
-
-**Error Code Pattern**
+**timer.h** - POSIX timer wrapper:
 ```c
-// Check return, then errno for specific error type
-int fd = open(path, O_RDONLY);
-if (fd < 0) {
-    syslog(LOG_ERR, "Failed to open %s: %s", path, strerror(errno));
-    if (errno == ENOENT) {
-        // Handle file not found
-    }
-    return -1;
-}
+timer_t *timer_create(int fd_to_track);
+int timer_arm(timer_t *timer, int milliseconds);
+void timer_disarm(timer_t *timer);
 ```
 
-**Signal Handler Safety**
-- Only set `volatile sig_atomic_t` flags in signal handlers
-- Check flags in main event loop (not in handlers)
-- Never call `printf()`, `syslog()`, `malloc()` from signal handler
+### Key Files to Read
 
-### Testing Standards
+1. **main.c** - Event loop showing module orchestration
+2. **state.h** - State machine interface
+3. **config.h** - Configuration structure and defaults
+4. **tests/test_state.c** - State machine unit tests (reference)
+5. **Makefile** - Build system and cross-compilation targets
 
-**Unit Testing**
-- Framework: Unity-style (included in tests/)
-- Test pattern: Include `.c` file to access static functions
-- Coverage target: 70-80% minimum, 90%+ for critical paths
-- Run: `make test` for simple tests, `make coverage` for coverage report
+## Performance Characteristics
 
-**Test Areas**
-- Input validation (config parsing, numeric bounds)
-- State machine transitions
-- Time-based calculations (handle clock adjustments)
-- Error paths (failed opens, permission denied)
-- Edge cases (INT_MAX, boundary values)
+- **CPU (idle)**: <0.05%
+- **Memory (RSS)**: ~0.2 MB
+- **Latency**: <200ms touch-to-restore
+- **SD Card I/O**: ~90% reduction via brightness caching
 
-**Mock/Stub Pattern**
-- Fake time provider for testing timeout logic
-- Fake brightness provider for testing sysfs writes
-- Fake event source for testing input handling
+Benchmarked on RPi4 (1.5GHz ARM Cortex-A72) over 24+ hours continuous operation.
 
-### Version Management
+## Development Patterns
 
-**VERSION Definition**
-- Define in single header file: `include/version.h`
-- Inject at build-time via Makefile to avoid manual updates
-- Match version in systemd service file
+### Adding a Configuration Parameter
 
-Example:
+1. Add to `config_t` struct in config.h
+2. Add descriptor entry in `config_params[]` table in config.c
+3. Add test case in tests/test_config.c (parsing + validation)
+
+### Adding State Machine Logic
+
+Keep state.c pure (no I/O). All device operations go in main.c through HAL modules.
+
+### Testing New Code
+
+State machine tests can use pure C without hardware:
 ```c
-#define VERSION_MAJOR 1
-#define VERSION_MINOR 2
-#define VERSION_PATCH 3
-#define VERSION_STRING "1.2.3"
+state_t *state = state_create(300, 150);  // 300s timeout, 150s dim
+state_handle_touch(state);
+assert(state_get_brightness(state) == 100);  // FULL state
 ```
 
-Makefile integration:
-```makefile
-VERSION_MAJOR = 1
-VERSION_MINOR = 2
-VERSION_PATCH = 3
+## Systemd Integration
 
-version.h:
-	echo "#define VERSION_MAJOR $(VERSION_MAJOR)" > include/version.h
-	echo "#define VERSION_MINOR $(VERSION_MINOR)" >> include/version.h
-	echo "#define VERSION_PATCH $(VERSION_PATCH)" >> include/version.h
-	echo "#define VERSION_STRING \"$(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_PATCH)\"" >> include/version.h
+Service file: `systemd/touch-timeout.service`
+
+**Optional systemd features** (requires libsystemd):
+- sd_notify() for startup confirmation
+- Watchdog pinging for health monitoring
+- Graceful shutdown handling
+
+**Fallback**: Builds without libsystemd using stub functions. Type=simple service works on minimal systems.
+
+View logs:
+```bash
+journalctl -u touch-timeout.service -f
+systemctl status touch-timeout.service
 ```
 
-**Rationale**: Single source of truth for versioning; eliminates manual synchronization between code and systemd service files.
+## Known Limitations
 
----
+- Linux-only (timerfd, sysfs, /dev/input)
+- Single display only
+- Fixed device paths (/sys/class/backlight, /dev/input)
+- No multi-device input support
 
-## Standards Summary Reference
+## Future Roadmap (v2.1+)
 
-| Category | Standard | Why | Status |
-|----------|----------|-----|--------|
-| Language | C17 with POSIX.1-2008 | Modern stability, broad embedded toolchain support, backward compatible | Implemented |
-| Security | CERT C (SIG31-C, INT32-C, FIO32-C, ERR06-C) | Daemon runs with privileges; must resist memory corruption and injection attacks | Implemented |
-| Naming | typedef _s/_e suffixes, snake_case functions | Avoids POSIX _t conflicts; self-documenting; type-safe | Implemented |
-| Comments | Hybrid C++/C style, explain why not what | C99+ compliant; concise inline comments; rationale preservation | Implemented |
-| Error Handling | Check all returns, errno propagation | Daemons run unattended; graceful degradation prevents silent failures | Implemented |
-| Memory | Zero dynamic allocation, static/stack only | Predictable behavior; no fragmentation; embedded safety | Implemented |
-| Testing | Unit tests, 70-80% coverage minimum | Validates logic without hardware; regression detection | Implemented |
-| Documentation | Self-documenting names, Doxygen | Reduces cognitive load; generates API docs; long-term maintainability | Partial |
+- **v2.1.0**: Configurable log levels, silent production mode
+- **v2.2.0**: USB hotplug, multi-device input
+- **v2.3.0**: Input device auto-classification
+- **v2.4.0**: Optional activity sources (ALSA, SSH detection)
+
+See REFACTORING.md for detailed feature roadmap.
+
+## Compiler & Flags
+
+- **Compiler**: gcc 7+ with C17 support
+- **Standard**: `-std=c17` with `-D_POSIX_C_SOURCE=200809L`
+- **Optimization**: `-O2` for release builds
+- **Warnings**: `-Wall -Wextra -Wno-unused-parameter`
+- **Optional**: `-coverage` for unit test instrumentation
+
+## References
+
+- REFACTORING.md: v2.0 architecture and improvements over v1.x
+- README.md: Feature overview and configuration
+- DEPLOYMENT.md: Cross-compilation and deployment workflow
+- INSTALLATION.md: System setup instructions
+- [CERT C Coding Standard](https://wiki.sei.cmu.edu/confluence/display/c/SEI+CERT+C+Coding+Standard)
+- [timerfd API](https://man7.org/linux/man-pages/man2/timerfd_create.2.html)
