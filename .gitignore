@@ -24,6 +24,7 @@ coverage/
 .vscode/
 .claude/settings.local.json
 .claude/
+CLAUDE.*
 *.local.*
 *.swp
 *.swo
