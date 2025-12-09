@@ -15,6 +15,10 @@ Currently on the `refactoring-v2` branch (v2.0.0) implementing a modular archite
 - New features: graceful config fallback, ROADMAP.md documenting v2.1-v2.4+ plans
 - **Awaiting:** Hardware validation before production release
 
+## Design Principle
+
+See [ARCHITECTURE.md - Design Philosophy](ARCHITECTURE.md#design-philosophy) for project design principles.
+
 ## Development Guidelines
 - Use clear variable names
 - Comment complex logic
@@ -111,6 +115,31 @@ make clean && make test
 # Coverage check for specific file
 gcov src/state.c
 ```
+
+## Testing Strategy
+
+**Goal**: 95%+ automated, <10 minutes total manual testing.
+
+**Automated Tests** (no hardware required):
+- `scripts/test-deployment.sh`: Validates deployment changes in <5 seconds (syntax, structure, references)
+- `make test`: 50 unit tests (state + config modules)
+- All tests run on every commit
+
+**Manual Testing** (on device - minimize this):
+- Touch responsiveness after deployment
+- Log verification via `journalctl`
+- Basic state transitions (FULL → DIMMED → OFF)
+
+**Edge Case Focus**:
+- Invalid IP addresses, missing cross-compilers, SSH failures
+- Config out-of-range values, path traversal attempts
+- Timer edge cases (wraparound, rapid transitions)
+
+**Workflow**: Write automated test FIRST whenever possible. If manual testing identifies a bug, add automated regression test.
+
+## SD Card Write Optimization
+
+See [ARCHITECTURE.md - SD Card Write Optimization](ARCHITECTURE.md#8-sd-card-write-optimization) for the three-layer optimization strategy (deployment, logging, runtime) and performance metrics.
 
 ## SSH Key Setup for Remote Deployment
 
@@ -234,12 +263,7 @@ make arm64  # → build/arm64/touch-timeout
 
 ### Deployment to RPi4 over TCP-IP
 
-```bash
-./scripts/deploy-arm.sh [IP_ADDRESS] arm64
-ssh root@[IP_ADDRESS] "sudo /run/touch-timeout-staging/install.sh"
-```
-
-See [INSTALLATION.md - Method 2](INSTALLATION.md#method-2-remote-deployment-cross-compilation) for detailed workflow.
+See [INSTALLATION.md - Method 2](INSTALLATION.md#method-2-remote-deployment-cross-compilation) for comprehensive deployment guide including SSH setup, troubleshooting, and CI/CD automation.
 
 ## Code Organization
 
@@ -289,6 +313,22 @@ void timer_disarm(timer_t *timer);
 - **SD Card I/O**: ~90% reduction via brightness caching
 
 Benchmarked on RPi4 (1.5GHz ARM Cortex-A72) over 24+ hours continuous operation.
+
+## Documentation Standards
+
+**User-First Organization**: Structure docs by user journey, not implementation details
+- **INSTALLATION.md**: Two methods (Direct vs Remote), not "for developers" vs "for users"
+- **README.md**: Quick examples with links to comprehensive guides
+- **ARCHITECTURE.md**: Technical details for contributors, not mixed with user docs
+
+**Appropriate Detail Level**:
+- Quick start: 5-10 lines showing the most common case
+- Comprehensive: Full options, edge cases, troubleshooting
+- Balance: Don't hide important details, but make common case discoverable in 10 seconds
+
+**Signal-to-Noise**: Every line should add value
+- Skip obvious explanations (e.g., "Install the compiler before compiling")
+- Include non-obvious guidance (e.g., "Why /run vs /tmp", "SSH keys eliminate 3-4 password prompts")
 
 ## Development Patterns
 
