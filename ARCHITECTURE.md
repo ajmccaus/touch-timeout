@@ -1,4 +1,4 @@
-# Touch-Timeout v2.0 Refactoring Summary
+# Touch-Timeout v2.0 Architecture
 
 ## Overview
 
@@ -327,10 +327,10 @@ make clean-all    # Remove all build artifacts (native + cross-compiled)
 
 ```bash
 # Step 1: Build and transfer from WSL2/Linux
-./scripts/deploy-arm.sh 127 arm64  # Deploy to 192.168.1.127
+./scripts/deploy-arm.sh <IP_ADDRESS> arm64
 
 # Step 2: SSH into RPi and install
-ssh root@192.168.1.127
+ssh root@<IP_ADDRESS>
 sudo /tmp/touch-timeout-staging/install-on-rpi.sh
 ```
 

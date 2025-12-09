@@ -11,43 +11,9 @@ Currently on the `refactoring-v2` branch (v2.0.0) implementing a modular archite
 ## Development Guidelines
 - Use clear variable names
 - Comment complex logic
-- Test on real Mac before committing
+- Test before committing
 - Explain all system API calls
-
-## When I Approve Your Changes
-Before I approve, answer:
-1. What does this code do?
-2. Why this approach vs. simpler alternatives?
-3. What could break?
-4. How do I test it?
-
-## For New Developers
-I'm learning to code. When explaining anything:
-- Define technical terms
-- Explain WHY we chose this approach
-- Show alternatives I could have used
-- Break down complex functions step-by-step
-
-## Approval Workflow (CRITICAL)
-Before I can approve your changes, you MUST:
-
-1. **Explain the change** in plain language
-2. **Show me alternatives** you considered
-3. **Identify risks** - what could break?
-4. **Provide test steps** - how do I verify this works?
-
-If I don't understand something, I'll ask "ELI5" (Explain Like I'm 5)
-and you'll break it down further with analogies.
 ```
-
-**In your Claude Code prompts:**
-```
-"Add a notification feature. Before you code:
-1. Explain your plan
-2. Show me the pros/cons of 2-3 approaches  
-3. Recommend one with reasoning
-4. Wait for my approval to proceed"
-
 
 ## Coding Standards and Best Practices
 
@@ -139,19 +105,15 @@ make clean && make test
 gcov src/state.c
 ```
 
-## SSH Key Copy Procedure
-when setting up key authentication for automated file transfer to RPi system use this 
-manual procedure to copy the key directly from your WSL2 machine
+## SSH Key Setup for Remote Deployment
 
-1. On WSL2, create a temporary file with just the key:
-cat ~/.ssh/id_rsa.pub > /tmp/pubkey.txt
-2. Now copy it using SCP [use sudo if not logging in as root]:
-scp /tmp/pubkey.txt [username]@[IP_ADDRESS]:~/.ssh/authorized_keys
-3. Enter the password when prompted. 
-4. Then enter [use sudo if not logging in as root]:
-ssh [username]@[IP_ADDRESS] "chmod 600 ~/.ssh/authorized_keys"
-Now test passwordless login: ssh [username]@[IP_ADDRESS] "echo OK"
-5. This should work without a password now!
+See [INSTALLATION.md - SSH Key Setup](INSTALLATION.md#ssh-key-setup-optional-but-recommended) for comprehensive SSH key configuration instructions.
+
+Quick reference:
+```bash
+ssh-copy-id <USER>@<IP_ADDRESS>
+ssh <USER>@<IP_ADDRESS> "echo OK"  # Verify passwordless login
+```
 
 
 ## Architecture
@@ -267,10 +229,10 @@ make arm64  # → build/arm64/touch-timeout
 
 ```bash
 ./scripts/deploy-arm.sh [IP_ADDRESS] arm64
-ssh root@[IP_ADDRESS] "sudo /tmp/touch-timeout-staging/install-on-rpi.sh"
+ssh root@[IP_ADDRESS] "sudo /run/touch-timeout-staging/install.sh"
 ```
 
-See DEPLOYMENT.md for detailed workflow.
+See [INSTALLATION.md - Method 2](INSTALLATION.md#method-2-remote-deployment-cross-compilation) for detailed workflow.
 
 ## Code Organization
 
@@ -373,7 +335,7 @@ systemctl status touch-timeout.service
 - **v2.3.0**: Input device auto-classification
 - **v2.4.0**: Optional activity sources (ALSA, SSH detection)
 
-See REFACTORING.md for detailed feature roadmap.
+See ARCHITECTURE.md for detailed feature roadmap.
 
 ## Compiler & Flags
 
@@ -385,9 +347,8 @@ See REFACTORING.md for detailed feature roadmap.
 
 ## References
 
-- REFACTORING.md: v2.0 architecture and improvements over v1.x
+- ARCHITECTURE.md: v2.0 architecture and improvements over v1.x
 - README.md: Feature overview and configuration
-- DEPLOYMENT.md: Cross-compilation and deployment workflow
-- INSTALLATION.md: System setup instructions
+- INSTALLATION.md: Installation and deployment (both direct and remote methods)
 - [CERT C Coding Standard](https://wiki.sei.cmu.edu/confluence/display/c/SEI+CERT+C+Coding+Standard)
 - [timerfd API](https://man7.org/linux/man-pages/man2/timerfd_create.2.html)

@@ -2,8 +2,8 @@
 #
 # deploy-arm.sh - Deploy touch-timeout cross-compiled binary to RPi4 over network
 #
-# Usage: scripts/deploy-arm.sh <last_3_ip_octets> [arm32|arm64]
-# Example: scripts/deploy-arm.sh 127 arm64
+# Usage: scripts/deploy-arm.sh <IP_ADDRESS> [arm32|arm64] [OPTIONS]
+# Example: scripts/deploy-arm.sh 192.168.1.127 arm64 --user pi
 #
 # Process:
 # 1. Validates arguments
@@ -22,11 +22,11 @@ YELLOW='\033[1;33m'
 NC='\033[0m'  # No Color
 
 # Configuration
-RPI_IP_PREFIX="192.168.1"
 RPI_USER="root"
-RPI_STAGING_DIR="/tmp/touch-timeout-staging"
+RPI_STAGING_DIR="/run/touch-timeout-staging"
 ARCH="${2:-arm64}"
 BUILD_DIR="build"
+BATCH_MODE=""
 
 # Helper functions
 log_info() {
@@ -47,16 +47,49 @@ log_warn() {
 
 # Validate arguments
 if [[ $# -lt 1 ]]; then
-    log_error "Usage: $0 <last_3_ip_octets> [arm32|arm64]"
+    log_error "Usage: $0 <IP_ADDRESS> [arm32|arm64] [OPTIONS]"
+    echo ""
+    echo "Arguments:"
+    echo "  <IP_ADDRESS>    IP address of Raspberry Pi target"
+    echo "  [arm32|arm64]   Target architecture (default: arm64)"
+    echo ""
+    echo "Options:"
+    echo "  --user USER     SSH user for deployment (default: root)"
+    echo "  --batch         Batch mode - requires passwordless SSH (for CI/CD)"
+    echo ""
     echo "Examples:"
-    echo "  $0 127           # Build and deploy arm64 to 192.168.1.127"
-    echo "  $0 127 arm32     # Build and deploy arm32 to 192.168.1.127"
+    echo "  $0 192.168.1.127                          # Deploy arm64 as root"
+    echo "  $0 192.168.1.127 arm32                    # Deploy arm32 as root"
+    echo "  $0 192.168.1.127 arm64 --user pi          # Deploy as user 'pi'"
+    echo "  $0 192.168.1.127 arm64 --batch            # CI/CD mode (no passwords)"
+    echo "  $0 192.168.1.127 arm64 --user pi --batch  # Custom user + batch mode"
     exit 1
 fi
 
-IP_OCTETS="$1"
-if ! [[ "$IP_OCTETS" =~ ^[0-9]{1,3}$ ]] || [[ "$IP_OCTETS" -gt 255 ]]; then
-    log_error "Invalid IP octets: $IP_OCTETS (must be 0-255)"
+RPI_IP="$1"
+
+# Parse optional flags (after IP and ARCH)
+shift 2 2>/dev/null || shift 1  # Remove IP and optionally ARCH
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --user)
+            RPI_USER="$2"
+            shift 2
+            ;;
+        --batch)
+            BATCH_MODE="-o BatchMode=yes"
+            shift
+            ;;
+        *)
+            log_error "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+done
+# Validate IP address format (basic check for x.x.x.x pattern)
+if ! [[ "$RPI_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    log_error "Invalid IP address format: $RPI_IP"
+    echo "Expected format: x.x.x.x (e.g., 192.168.1.127)"
     exit 1
 fi
 
@@ -64,8 +97,6 @@ if [[ "$ARCH" != "arm32" && "$ARCH" != "arm64" ]]; then
     log_error "Invalid architecture: $ARCH (must be arm32 or arm64)"
     exit 1
 fi
-
-RPI_IP="${RPI_IP_PREFIX}.${IP_OCTETS}"
 
 log_info "Configuration:"
 log_info "  Target IP: ${BLUE}$RPI_IP${NC}"
@@ -92,10 +123,18 @@ case "$ARCH" in
 esac
 
 # Verify SSH connectivity before building
-log_info "Verifying SSH connectivity to $RPI_IP..."
-if ! ssh -o ConnectTimeout=5 -o BatchMode=yes "$RPI_USER@$RPI_IP" "echo ok" &> /dev/null; then
+log_info "Verifying SSH connectivity to $RPI_USER@$RPI_IP..."
+if ! ssh -o ConnectTimeout=5 $BATCH_MODE "$RPI_USER@$RPI_IP" "echo ok" 2>/dev/null; then
     log_error "Cannot connect to $RPI_USER@$RPI_IP"
-    echo "Make sure RPi4 is powered on and SSH is accessible"
+    echo ""
+    echo "Troubleshooting steps:"
+    echo "  1. Verify RPi is powered on: ping $RPI_IP"
+    echo "  2. Test SSH manually: ssh $RPI_USER@$RPI_IP"
+    echo "  3. Ensure SSH service is running on RPi"
+    echo ""
+    log_warn "For passwordless deployment (recommended):"
+    echo "  - Set up SSH keys (see INSTALLATION.md - SSH Setup section)"
+    echo "  - Eliminates password prompts during deployment"
     exit 1
 fi
 log_success "SSH connectivity verified"
@@ -143,8 +182,8 @@ log_success "Binary transferred"
 log_info "Transferring install script..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-scp -q "$SCRIPT_DIR/install-on-rpi.sh" "$RPI_USER@$RPI_IP:$RPI_STAGING_DIR/"
-ssh "$RPI_USER@$RPI_IP" "chmod +x $RPI_STAGING_DIR/install-on-rpi.sh"
+scp -q "$SCRIPT_DIR/install.sh" "$RPI_USER@$RPI_IP:$RPI_STAGING_DIR/"
+ssh "$RPI_USER@$RPI_IP" "chmod +x $RPI_STAGING_DIR/install.sh"
 log_success "Install script transferred"
 
 # Copy systemd service file (optional, may not be used on minimal systems)
@@ -165,10 +204,10 @@ echo -e "${GREEN}========================================${NC}"
 echo
 log_info "Next steps:"
 echo "  1. SSH into RPi4:"
-echo "     ssh root@$RPI_IP"
+echo "     ssh $RPI_USER@$RPI_IP"
 echo
 echo "  2. Run the installation script:"
-echo "     sudo $RPI_STAGING_DIR/install-on-rpi.sh"
+echo "     sudo $RPI_STAGING_DIR/install.sh"
 echo
 log_warn "The install script will:"
 echo "  - Install binary: /usr/bin/$VERSIONED_BINARY"

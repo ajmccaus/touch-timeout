@@ -1,7 +1,39 @@
 # touch-timeout
 Lightweight touchscreen backlight manager for Raspberry Pi 7" displays. Automatically dims and powers off the display during inactivity, instantly restoring on touch. Optimized for minimal Linux distributions like HifiBerry OS.
 
-**Branch Context:** You are on the `refactoring-v2` branch (v2.0.0 modular architecture). The roadmap below describes the `main` branch (v1.x monolithic). See REFACTORING.md for v2.0 details.
+**Branch Context:** You are on the `refactoring-v2` branch (v2.0.0 modular architecture). The roadmap below describes the `main` branch (v1.x monolithic). See ARCHITECTURE.md for v2.0 details.
+
+## Getting Started
+
+Choose your installation method:
+
+### For Raspberry Pi Users
+
+**Installing directly on your Raspberry Pi:**
+
+```bash
+git clone https://github.com/ajmccaus/touch-timeout.git
+cd touch-timeout
+make && sudo make install
+```
+
+→ **[Complete guide: INSTALLATION.md - Method 1](INSTALLATION.md#method-1-direct-installation-on-raspberry-pi)**
+
+### For Developers
+
+**Cross-compile on Linux/WSL2 and deploy to Raspberry Pi:**
+
+```bash
+# On build machine
+./scripts/deploy-arm.sh <IP_ADDRESS> arm64
+
+# On Raspberry Pi (after deployment)
+sudo /run/touch-timeout-staging/install.sh
+```
+
+→ **[Complete guide: INSTALLATION.md - Method 2](INSTALLATION.md#method-2-remote-deployment-cross-compilation)**
+
+---
 
 ## Features
 
