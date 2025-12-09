@@ -8,6 +8,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Currently on the `refactoring-v2` branch (v2.0.0) implementing a modular architecture. The `main` branch contains the v1.x monolithic implementation.
 
+**v2.0.0 Status:** Pre-release planning complete
+- Comprehensive 20-30 hour release plan prepared (see `V2_RELEASE_PLAN.md` symlink in project root)
+- Key tasks: config hardening, security review, hardware testing, documentation
+- Breaking changes: `poll_interval` removed (v1.0 artifact), `dim_percent` default 50→10
+- New features: graceful config fallback, ROADMAP.md documenting v2.1-v2.4+ plans
+- **Awaiting:** Hardware validation before production release
+
 ## Development Guidelines
 - Use clear variable names
 - Comment complex logic
@@ -320,6 +327,21 @@ View logs:
 journalctl -u touch-timeout.service -f
 systemctl status touch-timeout.service
 ```
+
+## Important Constraints
+
+- **Brightness values:** 15-255 acceptable, recommend ≤200 for RPi 7" official touchscreen
+  - Hardware limitation: >200 may cause unexpected PWM behavior (per hardware errata)
+  - Minimum brightness: 15 (avoids flicker)
+  - Minimum dim brightness: 10
+- **Off timeout:** Must be ≥10 seconds (design decision for user experience)
+- **Default dim_percent:** 10 (v2.0.0+), changed from 50 in v1.0.x
+  - Rationale: Keeps display at full brightness longer (90% of timeout vs 50%)
+  - Dim serves as brief warning before screen off
+  - Dims at 10% of off_timeout (e.g., 30s if off_timeout=300s)
+- **Error handling:** Graceful degradation, no fatal exits on config errors (v2.0.0+)
+  - Out-of-range config values → log warning, use defaults
+  - Daemon continues operation even with invalid configuration
 
 ## Known Limitations
 
