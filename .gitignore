@@ -11,6 +11,7 @@ touch-timeout
 # Test artifacts
 tests/test_config
 tests/test_state
+tests/test-results-*.txt
 tests/coverage/
 coverage/
 
