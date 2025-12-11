@@ -122,19 +122,12 @@ int main(int argc, char *argv[]) {
         goto cleanup;
     }
 
-    /* Parse command-line arguments (override config) */
-    if (argc > 1 && config_safe_atoi(argv[1], &config->brightness) != 0) {
-        syslog(LOG_ERR, "Invalid brightness argument: %s", argv[1]);
-        goto cleanup;
+    /* Parse command-line arguments (override config with validation) */
+    static const char *cli_keys[] = {"brightness", "off_timeout", "backlight", "device"};
+    for (int i = 1; i < argc && i <= 4; i++) {
+        if (config_set_value(config, cli_keys[i - 1], argv[i]) != 0)
+            goto cleanup;
     }
-    if (argc > 2 && config_safe_atoi(argv[2], &config->off_timeout) != 0) {
-        syslog(LOG_ERR, "Invalid timeout argument: %s", argv[2]);
-        goto cleanup;
-    }
-    if (argc > 3)
-        snprintf(config->backlight, sizeof(config->backlight), "%s", argv[3]);
-    if (argc > 4)
-        snprintf(config->device, sizeof(config->device), "%s", argv[4]);
 
     /* Open display device */
     display_t *display = display_open(config->backlight);

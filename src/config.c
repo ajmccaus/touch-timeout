@@ -32,6 +32,8 @@ typedef struct {
 /* Forward declarations */
 static void trim(char *s);
 static int validate_path_component(const char *path);
+static const config_param_t *find_param(const char *key);
+static int validate_param(const config_param_t *param, const char *value, int *int_result);
 
 /* Table-driven configuration parameters */
 static const config_param_t config_params[] = {
@@ -114,6 +116,53 @@ static int validate_path_component(const char *path) {
 }
 
 /*
+ * Find parameter descriptor by key
+ * Returns NULL if key not found
+ */
+static const config_param_t *find_param(const char *key) {
+    if (key == NULL)
+        return NULL;
+
+    for (size_t i = 0; i < config_params_count; i++) {
+        if (strcmp(key, config_params[i].key) == 0)
+            return &config_params[i];
+    }
+    return NULL;
+}
+
+/*
+ * Validate value against parameter descriptor
+ * For TYPE_INT: parses and validates range, stores in int_result
+ * For TYPE_STRING: validates path if required
+ * Returns 0 if valid, -1 if invalid
+ */
+static int validate_param(const config_param_t *param, const char *value, int *int_result) {
+    if (param == NULL || value == NULL)
+        return -1;
+
+    if (param->type == TYPE_INT) {
+        if (int_result == NULL)
+            return -1;
+
+        if (config_safe_atoi(value, int_result) != 0)
+            return -1;
+
+        if (*int_result < param->min_value || *int_result > param->max_value)
+            return -1;
+
+        return 0;
+
+    } else if (param->type == TYPE_STRING) {
+        if (param->validate_path && validate_path_component(value) != 0)
+            return -1;
+
+        return 0;
+    }
+
+    return -1;
+}
+
+/*
  * Safe string to integer conversion (CERT INT31-C compliant)
  */
 int config_safe_atoi(const char *str, int *result) {
@@ -137,53 +186,73 @@ int config_safe_atoi(const char *str, int *result) {
 }
 
 /*
- * Parse single configuration line using table-driven approach
+ * Parse single configuration line (config file - fallback on error)
  */
 static int parse_config_line(config_t *config, const char *key, const char *value, int line_num) {
-    /* Find matching parameter in table */
-    for (size_t i = 0; i < config_params_count; i++) {
-        const config_param_t *param = &config_params[i];
-
-        if (strcmp(key, param->key) != 0)
-            continue;
-
-        /* Found matching parameter */
-        void *field_ptr = (char *)config + param->offset;
-
-        if (param->type == TYPE_INT) {
-            int tmp;
-            if (config_safe_atoi(value, &tmp) != 0) {
-                syslog(LOG_WARNING, "Invalid value for %s: '%s' at line %d, keeping default %d",
-                       param->key, value, line_num, *(int *)field_ptr);
-                return 0;  /* Fallback to default - not a fatal error */
-            }
-
-            /* Validate range - fallback to default if out of range */
-            if (tmp < param->min_value || tmp > param->max_value) {
-                syslog(LOG_WARNING, "%s=%d out of range (%d-%d) at line %d, keeping default %d",
-                       param->key, tmp, param->min_value, param->max_value, line_num, *(int *)field_ptr);
-                return 0;  /* Fallback to default - not a fatal error */
-            }
-
-            *(int *)field_ptr = tmp;
-            return 0;
-
-        } else if (param->type == TYPE_STRING) {
-            /* Validate path if required */
-            if (param->validate_path && validate_path_component(value) != 0) {
-                syslog(LOG_WARNING, "Invalid path for %s: '%s' (no / or ..) at line %d, keeping default '%s'",
-                       param->key, value, line_num, (char *)field_ptr);
-                return 0;  /* Fallback to default - not a fatal error */
-            }
-
-            /* Copy string with bounds checking */
-            snprintf((char *)field_ptr, param->max_length, "%s", value);
-            return 0;
-        }
+    const config_param_t *param = find_param(key);
+    if (param == NULL) {
+        syslog(LOG_WARNING, "Unknown config key '%s' at line %d (ignored)", key, line_num);
+        return 0;
     }
 
-    /* Unknown parameter - log warning but continue (graceful degradation) */
-    syslog(LOG_WARNING, "Unknown config key '%s' at line %d (ignored)", key, line_num);
+    void *field_ptr = (char *)config + param->offset;
+    int int_val;
+
+    if (validate_param(param, value, &int_val) != 0) {
+        /* Log warning with context and keep default */
+        if (param->type == TYPE_INT) {
+            syslog(LOG_WARNING, "Invalid %s='%s' at line %d, keeping default %d",
+                   key, value, line_num, *(int *)field_ptr);
+        } else {
+            syslog(LOG_WARNING, "Invalid %s='%s' at line %d, keeping default '%s'",
+                   key, value, line_num, (char *)field_ptr);
+        }
+        return 0;  /* Fallback to default - not a fatal error */
+    }
+
+    /* Apply validated value */
+    if (param->type == TYPE_INT) {
+        *(int *)field_ptr = int_val;
+    } else {
+        snprintf((char *)field_ptr, param->max_length, "%s", value);
+    }
+
+    return 0;
+}
+
+/*
+ * Set configuration value by key (CLI args - reject on error)
+ */
+int config_set_value(config_t *config, const char *key, const char *value) {
+    if (config == NULL || key == NULL || value == NULL)
+        return -1;
+
+    const config_param_t *param = find_param(key);
+    if (param == NULL) {
+        syslog(LOG_ERR, "Unknown configuration key: '%s'", key);
+        return -1;
+    }
+
+    void *field_ptr = (char *)config + param->offset;
+    int int_val;
+
+    if (validate_param(param, value, &int_val) != 0) {
+        if (param->type == TYPE_INT) {
+            syslog(LOG_ERR, "Invalid %s='%s' (valid range: %d-%d)",
+                   key, value, param->min_value, param->max_value);
+        } else {
+            syslog(LOG_ERR, "Invalid %s='%s' (no / or .. allowed)", key, value);
+        }
+        return -1;
+    }
+
+    /* Apply validated value */
+    if (param->type == TYPE_INT) {
+        *(int *)field_ptr = int_val;
+    } else {
+        snprintf((char *)field_ptr, param->max_length, "%s", value);
+    }
+
     return 0;
 }
 

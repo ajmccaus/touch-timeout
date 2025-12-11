@@ -93,4 +93,20 @@ int config_validate(config_t *config, int max_brightness);
  */
 int config_safe_atoi(const char *str, int *result);
 
+/*
+ * Set configuration value by key (with validation)
+ *
+ * Uses the same table-driven validation as config_load().
+ * Invalid values are rejected (config unchanged).
+ *
+ * Parameters:
+ *   config: Configuration structure to modify
+ *   key:    Parameter name ("brightness", "off_timeout", "dim_percent",
+ *           "backlight", "device")
+ *   value:  String value to parse and validate
+ *
+ * Returns: 0 on success, -1 on validation failure
+ */
+int config_set_value(config_t *config, const char *key, const char *value);
+
 #endif /* TOUCH_TIMEOUT_CONFIG_H */

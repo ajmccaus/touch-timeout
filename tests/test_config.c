@@ -456,6 +456,82 @@ TEST(test_safe_atoi_max_int) {
     ASSERT_EQ(result, INT_MAX);
 }
 
+/* ==================== CONFIG_SET_VALUE TESTS ==================== */
+
+TEST(test_set_value_null_config) {
+    ASSERT_EQ(config_set_value(NULL, "brightness", "100"), -1);
+}
+
+TEST(test_set_value_null_key) {
+    config_t *config = config_init();
+    ASSERT_EQ(config_set_value(config, NULL, "100"), -1);
+}
+
+TEST(test_set_value_null_value) {
+    config_t *config = config_init();
+    ASSERT_EQ(config_set_value(config, "brightness", NULL), -1);
+}
+
+TEST(test_set_value_unknown_key) {
+    config_t *config = config_init();
+    ASSERT_EQ(config_set_value(config, "unknown_param", "123"), -1);
+}
+
+TEST(test_set_value_int_invalid_format) {
+    config_t *config = config_init();
+    int original = config->brightness;
+    ASSERT_EQ(config_set_value(config, "brightness", "abc"), -1);
+    ASSERT_EQ(config->brightness, original);  /* Unchanged */
+}
+
+TEST(test_set_value_int_range_high) {
+    config_t *config = config_init();
+    int original = config->brightness;
+    ASSERT_EQ(config_set_value(config, "brightness", "999"), -1);
+    ASSERT_EQ(config->brightness, original);  /* Unchanged */
+}
+
+TEST(test_set_value_int_range_low) {
+    config_t *config = config_init();
+    int original = config->off_timeout;
+    ASSERT_EQ(config_set_value(config, "off_timeout", "5"), -1);
+    ASSERT_EQ(config->off_timeout, original);  /* Unchanged */
+}
+
+TEST(test_set_value_string_path_traversal) {
+    config_t *config = config_init();
+    char original[64];
+    strcpy(original, config->device);
+    ASSERT_EQ(config_set_value(config, "device", "../sda"), -1);
+    ASSERT_STR_EQ(config->device, original);  /* Unchanged */
+}
+
+TEST(test_set_value_int_success) {
+    config_t *config = config_init();
+    ASSERT_EQ(config_set_value(config, "brightness", "200"), 0);
+    ASSERT_EQ(config->brightness, 200);
+}
+
+TEST(test_set_value_string_success) {
+    config_t *config = config_init();
+    ASSERT_EQ(config_set_value(config, "device", "event1"), 0);
+    ASSERT_STR_EQ(config->device, "event1");
+}
+
+/* ==================== PARSE_CONFIG_LINE GAP TEST ==================== */
+
+TEST(test_config_unknown_key_ignored) {
+    config_t *config = config_init();
+    const char *content = "unknown_key=somevalue\nbrightness=180\n";
+    char *path = create_temp_config(content);
+
+    /* Unknown key should be ignored, valid key should be applied */
+    ASSERT_EQ(config_load(config, path), 0);
+    ASSERT_EQ(config->brightness, 180);
+
+    cleanup_temp_file(path);
+}
+
 /* ==================== MAIN TEST RUNNER ==================== */
 
 int main(void) {
@@ -509,6 +585,21 @@ int main(void) {
     RUN_TEST(test_safe_atoi_invalid_mixed);
     RUN_TEST(test_safe_atoi_overflow);
     RUN_TEST(test_safe_atoi_max_int);
+
+    printf("\nconfig_set_value tests:\n");
+    RUN_TEST(test_set_value_null_config);
+    RUN_TEST(test_set_value_null_key);
+    RUN_TEST(test_set_value_null_value);
+    RUN_TEST(test_set_value_unknown_key);
+    RUN_TEST(test_set_value_int_invalid_format);
+    RUN_TEST(test_set_value_int_range_high);
+    RUN_TEST(test_set_value_int_range_low);
+    RUN_TEST(test_set_value_string_path_traversal);
+    RUN_TEST(test_set_value_int_success);
+    RUN_TEST(test_set_value_string_success);
+
+    printf("\nParsing gap tests:\n");
+    RUN_TEST(test_config_unknown_key_ignored);
 
     printf("\n========================================\n");
     printf("Results: %d/%d passed", tests_passed, tests_run);
