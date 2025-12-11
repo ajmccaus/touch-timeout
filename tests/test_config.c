@@ -69,7 +69,6 @@ TEST(test_config_init_defaults) {
     ASSERT_EQ(config->brightness, CONFIG_DEFAULT_BRIGHTNESS);
     ASSERT_EQ(config->off_timeout, CONFIG_DEFAULT_OFF_TIMEOUT);
     ASSERT_EQ(config->dim_percent, CONFIG_DEFAULT_DIM_PERCENT);
-    ASSERT_EQ(config->poll_interval, CONFIG_DEFAULT_POLL_INTERVAL);
     ASSERT_STR_EQ(config->backlight, CONFIG_DEFAULT_BACKLIGHT);
     ASSERT_STR_EQ(config->device, CONFIG_DEFAULT_DEVICE);
 }
@@ -93,7 +92,6 @@ TEST(test_config_load_all_values) {
         "brightness=150\n"
         "off_timeout=600\n"
         "dim_percent=30\n"
-        "poll_interval=200\n"
         "backlight=10-0045\n"
         "device=event2\n";
     char *path = create_temp_config(content);
@@ -102,7 +100,6 @@ TEST(test_config_load_all_values) {
     ASSERT_EQ(config->brightness, 150);
     ASSERT_EQ(config->off_timeout, 600);
     ASSERT_EQ(config->dim_percent, 30);
-    ASSERT_EQ(config->poll_interval, 200);
     ASSERT_STR_EQ(config->backlight, "10-0045");
     ASSERT_STR_EQ(config->device, "event2");
 
@@ -167,12 +164,44 @@ TEST(test_config_validate_minimum_brightness) {
 }
 
 TEST(test_config_validate_dim_timeout_calculation) {
-    config_t *config = config_init();
-    config->off_timeout = 300;
-    config->dim_percent = 50;
+    /* Parameterized test using DoE/Taguchi approach for comprehensive coverage */
+    struct {
+        int off_timeout;
+        int dim_percent;
+        int expected_dim_timeout;
+        const char *description;
+    } test_cases[] = {
+        /* Boundary: minimum values trigger zero division */
+        {10,    1,   5,     "Min values: zero from integer division (10*1/100=0)"},
+        /* Edge: non-zero result but below minimum threshold */
+        {100,   1,   5,     "Below minimum: 100*1/100=1 -> clamps to 5"},
+        /* Edge: exactly at minimum threshold */
+        {500,   1,   5,     "At minimum: 500*1/100=5"},
+        /* Typical: normal mid-range calculation */
+        {300,   50,  150,   "Normal: 300*50/100=150"},
+        /* Boundary: maximum values */
+        {86400, 100, 86400, "Max values: 86400*100/100=86400"},
+    };
 
-    ASSERT_EQ(config_validate(config, 255), 0);
-    ASSERT_EQ(config->dim_timeout, 150);
+    for (size_t i = 0; i < sizeof(test_cases) / sizeof(test_cases[0]); i++) {
+        config_t *config = config_init();
+        config->off_timeout = test_cases[i].off_timeout;
+        config->dim_percent = test_cases[i].dim_percent;
+
+        int result = config_validate(config, 255);
+        if (result != 0) {
+            printf("\n    FAIL: %s\n", test_cases[i].description);
+            printf("    config_validate() returned %d (expected 0)\n", result);
+            ASSERT_TRUE(0);  /* Force failure with context */
+        }
+
+        if (config->dim_timeout != test_cases[i].expected_dim_timeout) {
+            printf("\n    FAIL: %s\n", test_cases[i].description);
+            printf("    Expected dim_timeout=%d, got %d\n",
+                   test_cases[i].expected_dim_timeout, config->dim_timeout);
+            ASSERT_TRUE(0);  /* Force failure with context */
+        }
+    }
 }
 
 TEST(test_config_validate_dim_brightness_calculation) {
@@ -252,14 +281,77 @@ TEST(test_config_invalid_dim_percent_out_of_range) {
     cleanup_temp_file(path);
 }
 
-TEST(test_config_invalid_poll_interval_out_of_range) {
+/* ==================== CONFIG FALLBACK TESTS ==================== */
+
+TEST(test_config_fallback_brightness_too_high) {
     config_t *config = config_init();
-    const char *content = "poll_interval=5\n";
+    const char *content = "brightness=999\n";
     char *path = create_temp_config(content);
 
-    int original = config->poll_interval;
-    config_load(config, path);
-    ASSERT_EQ(config->poll_interval, original);  /* Unchanged */
+    /* Should keep default brightness */
+    ASSERT_EQ(config_load(config, path), 0);
+    ASSERT_EQ(config->brightness, CONFIG_DEFAULT_BRIGHTNESS);
+
+    cleanup_temp_file(path);
+}
+
+TEST(test_config_fallback_multiple_invalid_values) {
+    config_t *config = config_init();
+    const char *content =
+        "brightness=999\n"      /* Too high */
+        "off_timeout=5\n"       /* Too low */
+        "dim_percent=150\n";    /* Too high */
+    char *path = create_temp_config(content);
+
+    /* All should fall back to defaults */
+    ASSERT_EQ(config_load(config, path), 0);
+    ASSERT_EQ(config->brightness, CONFIG_DEFAULT_BRIGHTNESS);
+    ASSERT_EQ(config->off_timeout, CONFIG_DEFAULT_OFF_TIMEOUT);
+    ASSERT_EQ(config->dim_percent, CONFIG_DEFAULT_DIM_PERCENT);
+
+    cleanup_temp_file(path);
+}
+
+TEST(test_config_fallback_mixed_valid_invalid) {
+    config_t *config = config_init();
+    const char *content =
+        "brightness=150\n"      /* Valid */
+        "off_timeout=5\n"       /* Invalid - too low */
+        "dim_percent=20\n";     /* Valid */
+    char *path = create_temp_config(content);
+
+    /* Valid values applied, invalid falls back */
+    ASSERT_EQ(config_load(config, path), 0);
+    ASSERT_EQ(config->brightness, 150);                     /* Valid value applied */
+    ASSERT_EQ(config->off_timeout, CONFIG_DEFAULT_OFF_TIMEOUT);  /* Fallback to default */
+    ASSERT_EQ(config->dim_percent, 20);                     /* Valid value applied */
+
+    cleanup_temp_file(path);
+}
+
+TEST(test_config_fallback_invalid_integer_format) {
+    config_t *config = config_init();
+    const char *content = "brightness=abc123\n";
+    char *path = create_temp_config(content);
+
+    /* Should keep default when parsing fails */
+    ASSERT_EQ(config_load(config, path), 0);
+    ASSERT_EQ(config->brightness, CONFIG_DEFAULT_BRIGHTNESS);
+
+    cleanup_temp_file(path);
+}
+
+TEST(test_config_fallback_path_traversal) {
+    config_t *config = config_init();
+    const char *content = "device=../../../etc/passwd\n";
+    char *path = create_temp_config(content);
+
+    char original[64];
+    strcpy(original, config->device);
+
+    /* Should keep default when path validation fails */
+    ASSERT_EQ(config_load(config, path), 0);
+    ASSERT_STR_EQ(config->device, original);
 
     cleanup_temp_file(path);
 }
@@ -394,7 +486,13 @@ int main(void) {
     RUN_TEST(test_config_invalid_timeout_below_minimum);
     RUN_TEST(test_config_valid_timeout_at_minimum);
     RUN_TEST(test_config_invalid_dim_percent_out_of_range);
-    RUN_TEST(test_config_invalid_poll_interval_out_of_range);
+
+    printf("\nConfig fallback tests:\n");
+    RUN_TEST(test_config_fallback_brightness_too_high);
+    RUN_TEST(test_config_fallback_multiple_invalid_values);
+    RUN_TEST(test_config_fallback_mixed_valid_invalid);
+    RUN_TEST(test_config_fallback_invalid_integer_format);
+    RUN_TEST(test_config_fallback_path_traversal);
 
     printf("\nSecurity tests:\n");
     RUN_TEST(test_config_path_traversal_device);

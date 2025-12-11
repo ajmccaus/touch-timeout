@@ -50,13 +50,6 @@ static const config_param_t config_params[] = {
         .max_value = CONFIG_MAX_OFF_TIMEOUT,
     },
     {
-        .key = "poll_interval",
-        .type = TYPE_INT,
-        .offset = offsetof(config_t, poll_interval),
-        .min_value = CONFIG_MIN_POLL_INTERVAL,
-        .max_value = CONFIG_MAX_POLL_INTERVAL,
-    },
-    {
         .key = "dim_percent",
         .type = TYPE_INT,
         .offset = offsetof(config_t, dim_percent),
@@ -160,16 +153,16 @@ static int parse_config_line(config_t *config, const char *key, const char *valu
         if (param->type == TYPE_INT) {
             int tmp;
             if (config_safe_atoi(value, &tmp) != 0) {
-                syslog(LOG_WARNING, "Invalid value for %s: '%s' at line %d",
-                       param->key, value, line_num);
-                return -1;
+                syslog(LOG_WARNING, "Invalid value for %s: '%s' at line %d, keeping default %d",
+                       param->key, value, line_num, *(int *)field_ptr);
+                return 0;  /* Fallback to default - not a fatal error */
             }
 
-            /* Validate range */
+            /* Validate range - fallback to default if out of range */
             if (tmp < param->min_value || tmp > param->max_value) {
-                syslog(LOG_WARNING, "%s=%d out of range (%d-%d) at line %d",
-                       param->key, tmp, param->min_value, param->max_value, line_num);
-                return -1;
+                syslog(LOG_WARNING, "%s=%d out of range (%d-%d) at line %d, keeping default %d",
+                       param->key, tmp, param->min_value, param->max_value, line_num, *(int *)field_ptr);
+                return 0;  /* Fallback to default - not a fatal error */
             }
 
             *(int *)field_ptr = tmp;
@@ -178,9 +171,9 @@ static int parse_config_line(config_t *config, const char *key, const char *valu
         } else if (param->type == TYPE_STRING) {
             /* Validate path if required */
             if (param->validate_path && validate_path_component(value) != 0) {
-                syslog(LOG_WARNING, "Invalid path for %s: '%s' (no / or ..) at line %d",
-                       param->key, value, line_num);
-                return -1;
+                syslog(LOG_WARNING, "Invalid path for %s: '%s' (no / or ..) at line %d, keeping default '%s'",
+                       param->key, value, line_num, (char *)field_ptr);
+                return 0;  /* Fallback to default - not a fatal error */
             }
 
             /* Copy string with bounds checking */
@@ -189,9 +182,9 @@ static int parse_config_line(config_t *config, const char *key, const char *valu
         }
     }
 
-    /* Unknown parameter */
-    syslog(LOG_WARNING, "Unknown config key '%s' at line %d", key, line_num);
-    return -1;
+    /* Unknown parameter - log warning but continue (graceful degradation) */
+    syslog(LOG_WARNING, "Unknown config key '%s' at line %d (ignored)", key, line_num);
+    return 0;
 }
 
 /*
@@ -201,7 +194,6 @@ config_t *config_init(void) {
     g_config.brightness = CONFIG_DEFAULT_BRIGHTNESS;
     g_config.off_timeout = CONFIG_DEFAULT_OFF_TIMEOUT;
     g_config.dim_percent = CONFIG_DEFAULT_DIM_PERCENT;
-    g_config.poll_interval = CONFIG_DEFAULT_POLL_INTERVAL;
     g_config.dim_timeout = 0;       /* Calculated later */
     g_config.dim_brightness = 0;    /* Calculated later */
 
@@ -276,12 +268,27 @@ int config_validate(config_t *config, int max_brightness) {
     /* Calculate dim_timeout (CERT INT32-C: use long to prevent overflow) */
     long dim_timeout_long = ((long)config->off_timeout * config->dim_percent) / 100;
 
-    if (dim_timeout_long <= 0 || dim_timeout_long > config->off_timeout) {
-        syslog(LOG_ERR, "Invalid dim_timeout calculation (overflow or config error)");
+    /* Handle zero from integer division (graceful fallback) */
+    if (dim_timeout_long <= 0) {
+        syslog(LOG_WARNING, "Calculated dim_timeout is 0 (off_timeout=%d, dim_percent=%d%%), using minimum %ds",
+               config->off_timeout, config->dim_percent, CONFIG_MIN_DIM_TIMEOUT);
+        dim_timeout_long = CONFIG_MIN_DIM_TIMEOUT;
+    }
+
+    /* Check for overflow (should be impossible with validated inputs - indicates corruption/bug) */
+    if (dim_timeout_long > config->off_timeout) {
+        syslog(LOG_ERR, "Invalid dim_timeout calculation (overflow) - possible memory corruption");
         return -1;
     }
 
     config->dim_timeout = (int)dim_timeout_long;
+
+    /* Enforce minimum dim time to prevent near-zero dim periods */
+    if (config->dim_timeout < CONFIG_MIN_DIM_TIMEOUT) {
+        syslog(LOG_WARNING, "Calculated dim_timeout %ds below minimum %ds, using minimum",
+               config->dim_timeout, CONFIG_MIN_DIM_TIMEOUT);
+        config->dim_timeout = CONFIG_MIN_DIM_TIMEOUT;
+    }
 
     /* Calculate dim_brightness */
     int calculated_dim = config->brightness / 10;

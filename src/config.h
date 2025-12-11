@@ -14,12 +14,11 @@
 #include <stdbool.h>
 
 /* Configuration defaults - compile time constants */
-#define CONFIG_DEFAULT_BRIGHTNESS       100
+#define CONFIG_DEFAULT_BRIGHTNESS       150
 #define CONFIG_DEFAULT_OFF_TIMEOUT      300
 #define CONFIG_DEFAULT_BACKLIGHT        "rpi_backlight"
 #define CONFIG_DEFAULT_DEVICE           "event0"
-#define CONFIG_DEFAULT_POLL_INTERVAL    100
-#define CONFIG_DEFAULT_DIM_PERCENT      50
+#define CONFIG_DEFAULT_DIM_PERCENT      10
 
 /* Configuration limits - hardware and safety constraints */
 #define CONFIG_MIN_BRIGHTNESS           15      /* Avoid flicker */
@@ -27,10 +26,9 @@
 #define CONFIG_MAX_BRIGHTNESS           255     /* 8-bit PWM */
 #define CONFIG_MIN_OFF_TIMEOUT          10      /* Minimum 10 seconds */
 #define CONFIG_MAX_OFF_TIMEOUT          86400   /* Maximum 24 hours */
-#define CONFIG_MIN_POLL_INTERVAL        10      /* 10ms minimum */
-#define CONFIG_MAX_POLL_INTERVAL        2000    /* 2s maximum */
-#define CONFIG_MIN_DIM_PERCENT          10      /* 10% minimum */
+#define CONFIG_MIN_DIM_PERCENT          1       /* 1% minimum */
 #define CONFIG_MAX_DIM_PERCENT          100     /* 100% = no dimming */
+#define CONFIG_MIN_DIM_TIMEOUT          5       /* Minimum 5 seconds dim time */
 #define CONFIG_PATH_MAX_LEN             256
 
 /* Configuration structure */
@@ -39,7 +37,6 @@ typedef struct {
     int off_timeout;            /* Timeout in seconds (CONFIG_MIN_OFF_TIMEOUT - CONFIG_MAX_OFF_TIMEOUT) */
     int dim_timeout;            /* Calculated: (off_timeout * dim_percent) / 100 */
     int dim_brightness;         /* Calculated: max(brightness/10, CONFIG_MIN_DIM_BRIGHTNESS) */
-    int poll_interval;          /* Polling interval in ms (CONFIG_MIN_POLL_INTERVAL - CONFIG_MAX_POLL_INTERVAL) */
     int dim_percent;            /* Dim at N% of off_timeout (CONFIG_MIN_DIM_PERCENT - CONFIG_MAX_DIM_PERCENT) */
     char backlight[64];         /* Backlight device name */
     char device[64];            /* Input device name */

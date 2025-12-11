@@ -38,7 +38,7 @@ sudo /run/touch-timeout-staging/install.sh
 ## Features
 
 - **Zero-configuration defaults**: Works out-of-box with sensible settings
-- **Configurable dimming**: Percentage-based dim timing (10-100% of off timeout)
+- **Configurable dimming**: Percentage-based dim timing (1-100% of off timeout)
 - **Power efficient**: <0.1% CPU usage during idle
 - **Hardware-optimized**: Respects display max brightness, prevents flicker
 - **Robust**: Handles missed poll cycles, system suspend/resume
@@ -50,9 +50,9 @@ sudo /run/touch-timeout-staging/install.sh
 |-------|--------|
 | **Service start** | Reads `/etc/touch-timeout.conf`, applies brightness settings |
 | **Touch detected** | Restores full brightness, resets idle timer |
-| **Idle (50% of timeout)** | Dims to `user_brightness ÷ 10` (minimum 10) |
+| **Idle (10% of timeout)** | Dims to `user_brightness ÷ 10` (minimum 10) |
 | **Idle (100% of timeout)** | Powers off display (brightness = 0) |
-| **No config file** | Uses defaults: 100 brightness, 300s timeout, 50% dim time (150s for default 300s timeout) |
+| **No config file** | Uses defaults: 150 brightness, 300s timeout, 10% dim time (30s for default 300s timeout) |
 | **Invalid config** | Logs warning, falls back to defaults |
 | **Systemd stop** | Gracefully closes file descriptors |
 
@@ -111,8 +111,7 @@ Edit `/etc/touch-timeout.conf`:
 ```ini
 brightness=150            # Active brightness (15-255, recommend ≤200 for RPi display)
 off_timeout=300           # Seconds until screen off (minimum 10)
-dim_percent=50            # When to dim (10-100% of off_timeout)
-poll_interval=100         # Polling rate in ms (10-2000, recommend 50-1000)
+dim_percent=10            # When to dim (1-100% of off_timeout, default: 10)
 backlight=rpi_backlight   # Device name in /sys/class/backlight/
 device=event0             # Touchscreen in /dev/input/
 ```
@@ -138,11 +137,6 @@ device=event0             # Touchscreen in /dev/input/
 - [ ] **Config-Based Logging**: `log_level=none/info/debug` in `/etc/touch-timeout.conf` (replaces `-d` flag)
 - [ ] **Enhanced Dim Control**: Configurable `dim_brightness` (% of brightness, 5%-100%, min 10)
 - [ ] **Extended Dim Timeout**: Support 1%-100% of `off_timeout` (1s minimum)
-
-### v1.2.0: Hotplug Foundation (Planned)
-- [ ] **USB Hotplug**: `inotify` monitoring for plug-and-play device detection
-- [ ] **Multi-Device Polling**: Support up to 10 input devices (static config list)
-- [ ] **Robust Event Loop**: Handle device add/remove during runtime
 
 ### v1.2.0: Hotplug Foundation (Planned)
 - [ ] **USB Hotplug**: `inotify` monitoring for plug-and-play device detection

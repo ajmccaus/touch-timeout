@@ -11,20 +11,13 @@ Currently on the `refactoring-v2` branch (v2.0.0) implementing a modular archite
 **v2.0.0 Status:** Pre-release planning complete
 - Comprehensive 20-30 hour release plan prepared (see `V2_RELEASE_PLAN.md` symlink in project root)
 - Key tasks: config hardening, security review, hardware testing, documentation
-- Breaking changes: `poll_interval` removed (v1.0 artifact), `dim_percent` default 50→10
-- New features: graceful config fallback, ROADMAP.md documenting v2.1-v2.4+ plans
+- Breaking changes: `poll_interval` removed (v1.0 artifact), `dim_percent` default 50→10 and minimum 10→1%, `brightness` default 100→150
+- New features: graceful config fallback, dim_timeout clamping (min 5s), ROADMAP.md documenting v2.1-v2.4+ plans
 - **Awaiting:** Hardware validation before production release
 
 ## Design Principle
 
 See [ARCHITECTURE.md - Design Philosophy](ARCHITECTURE.md#design-philosophy) for project design principles.
-
-## Development Guidelines
-- Use clear variable names
-- Comment complex logic
-- Test before committing
-- Explain all system API calls
-```
 
 ## Coding Standards and Best Practices
 
@@ -75,7 +68,7 @@ This project implements best practices from multiple security standards:
 ```bash
 # Native build (x86_64)
 make              # Build daemon → build/native/touch-timeout
-make test         # Run 50 unit tests (config + state modules)
+make test         # Run all unit tests (config + state modules)
 make coverage     # Generate lcov coverage report
 make clean        # Remove build artifacts
 
@@ -95,8 +88,8 @@ make install      # Install to system (requires sudo)
 make test
 
 # Run specific test executable
-./tests/test_state      # State machine tests (21 tests)
-./tests/test_config     # Configuration parsing tests (29 tests)
+./tests/test_state      # State machine tests
+./tests/test_config     # Configuration tests
 
 # Generate coverage report
 make coverage
@@ -122,7 +115,7 @@ gcov src/state.c
 
 **Automated Tests** (no hardware required):
 - `scripts/test-deployment.sh`: Validates deployment changes in <5 seconds (syntax, structure, references)
-- `make test`: 50 unit tests (state + config modules)
+- `make test`: All unit tests (state + config modules)
 - All tests run on every commit
 
 **Manual Testing** (on device - minimize this):
@@ -198,40 +191,11 @@ Transitions triggered by:
 
 Default config: `/etc/touch-timeout.conf` (see `config/touch-timeout.conf` for example)
 
-Key parameters:
-- `brightness`: Active brightness (15-255, recommend ≤200)
-- `off_timeout`: Seconds until screen off (min: 10, default: 300)
-- `dim_percent`: When to dim (10-100% of off_timeout, default: 50)
-- `device`: Touch input device in `/dev/input/` (default: event0)
-- `backlight`: Device name in `/sys/class/backlight/` (default: rpi_backlight)
+**Configuration parameters:** See [README.md - Configuration](README.md#configuration) for complete parameter reference.
 
 ## Testing Infrastructure
 
-### Unit Tests (50 total)
-
-**test_state.c** (21 tests):
-- State transitions on touch/timeout
-- Clock handling and timer resets
-- Getter functions and initialization
-
-**test_config.c** (29 tests):
-- Default initialization
-- Config file parsing (int, string parameters)
-- Range validation and overflow protection
-- Safe integer parsing (`safe_atoi`)
-- Security: path traversal prevention
-
-### Test Categories
-
-- **Pure Logic Tests**: State machine tests require no hardware mocking (zero I/O)
-- **Integration Tests**: Config module tests mock file I/O via test fixtures
-- **Coverage**: Use `make coverage` to measure code coverage
-
-### Performance Testing
-
-Run on device: `scp scripts/test-performance.sh root@[IP_ADDRESS]:/tmp/ && ssh root@[IP_ADDRESS] "bash /tmp/test-performance.sh"`
-
-Measures: CPU usage, memory (RSS), SD card write activity, file descriptor leaks.
+See [ARCHITECTURE.md - Testing Infrastructure](ARCHITECTURE.md#7-testing-infrastructure) for test coverage details and categories.
 
 ## Security & Compliance
 
@@ -267,35 +231,17 @@ See [INSTALLATION.md - Method 2](INSTALLATION.md#method-2-remote-deployment-cros
 
 ## Code Organization
 
-### Module Interfaces
+### Module Structure
 
-**state.h** - Pure state machine:
-```c
-state_t *state_create(int on_timeout, int dim_timeout);
-void state_handle_touch(state_t *state);
-void state_handle_timeout(state_t *state);
-int state_get_brightness(state_t *state);
-```
+See [ARCHITECTURE.md - Module Interfaces](ARCHITECTURE.md#module-interfaces) for complete API documentation and usage examples.
 
-**config.h** - Configuration management:
-```c
-int config_load_from_file(const char *path, config_t *config);
-void config_set_defaults(config_t *config);
-```
-
-**display.h** - Backlight HAL:
-```c
-display_t *display_open(const char *backlight_name);
-int display_set_brightness(display_t *display, int brightness);
-void display_close(display_t *display);
-```
-
-**timer.h** - POSIX timer wrapper:
-```c
-timer_t *timer_create(int fd_to_track);
-int timer_arm(timer_t *timer, int milliseconds);
-void timer_disarm(timer_t *timer);
-```
+**Six independent modules:**
+- **state.c/h** - Pure state machine (FULL → DIMMED → OFF), zero I/O dependencies
+- **config.c/h** - Table-driven configuration with graceful fallback
+- **display.c/h** - Backlight hardware abstraction (sysfs interface)
+- **input.c/h** - Touch input device abstraction (/dev/input)
+- **timer.c/h** - POSIX timerfd wrapper for event-driven timeouts
+- **main.c** - Event loop orchestrator (poll-based)
 
 ### Key Files to Read
 
@@ -329,6 +275,15 @@ Benchmarked on RPi4 (1.5GHz ARM Cortex-A72) over 24+ hours continuous operation.
 **Signal-to-Noise**: Every line should add value
 - Skip obvious explanations (e.g., "Install the compiler before compiling")
 - Include non-obvious guidance (e.g., "Why /run vs /tmp", "SSH keys eliminate 3-4 password prompts")
+
+**Single Source of Truth (SSoT)**: This project's canonical locations:
+- **Configuration parameters**: README.md (Configuration section)
+- **Installation procedures**: INSTALLATION.md
+- **Architecture/internals**: ARCHITECTURE.md
+- **Build commands**: CLAUDE.md (Build Commands section)
+- **Defaults and constants**: src/config.h (code is the ultimate SSoT)
+
+When documenting, reference the SSoT instead of duplicating. code-reviewer should flag SSoT violations.
 
 ## Development Patterns
 

@@ -209,12 +209,7 @@ Edit the configuration file:
 sudo nano /etc/touch-timeout.conf
 ```
 
-**Key parameters:**
-- `brightness`: Active brightness (15-255, recommend ≤200)
-- `off_timeout`: Seconds until screen off (min: 10, default: 300)
-- `dim_percent`: When to dim (10-100% of off_timeout, default: 50)
-- `device`: Touch input device in `/dev/input/` (default: event0)
-- `backlight`: Device name in `/sys/class/backlight/` (default: rpi_backlight)
+See [README.md - Configuration](README.md#configuration) for parameter reference.
 
 **Identify your touchscreen device** (if default doesn't work):
 ```bash

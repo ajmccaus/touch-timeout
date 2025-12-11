@@ -23,20 +23,12 @@ This philosophy drives specific design choices:
 ## Features and Usage
 
 **Automatic Display Management:**
-- Display dims after configurable idle period (default: 50% of timeout)
+- Display dims after configurable idle period (default: 10% of timeout)
 - Display powers off completely after full timeout (default: 300s)
 - Instant restoration on touch input
 - Brightness caching prevents redundant hardware writes
 
-**Configuration:**
-Edit `/etc/touch-timeout.conf`:
-```ini
-brightness=150        # Active brightness (15-255)
-off_timeout=300       # Seconds until screen off (min: 10)
-dim_percent=50        # Dim at 50% of timeout (10-100)
-device=event0         # Touch input device
-backlight=rpi_backlight  # Backlight device name
-```
+**Configuration:** See [README.md - Configuration](README.md#configuration)
 
 **Runtime Control:**
 ```bash
@@ -202,18 +194,19 @@ static const config_param_t config_params[] = {
 
 **After (v2.0.0):**
 - Modular tests: separate executables per module
-- 50 tests across 2 modules (29 config + 21 state)
+- 54 tests across 2 modules (33 config + 21 state)
 - Pure logic testing without hardware
 - Mock headers for cross-platform development
 - Performance testing script for on-device validation
 
 **Test Coverage:**
 ```
-Configuration Module:  29 tests
+Configuration Module:  33 tests
   - Initialization: 1 test
   - Parsing: 5 tests
   - Validation: 5 tests
-  - Range checks: 6 tests
+  - Range checks: 5 tests
+  - Fallback behavior: 5 tests
   - Security: 4 tests
   - safe_atoi: 8 tests
 
@@ -331,6 +324,89 @@ Benefits:
 - Runtime device selection
 - Clear ownership model
 
+### Module Interfaces
+
+This section documents the public API for each module. See source headers (`.h` files) for complete documentation.
+
+**state.h - Pure State Machine:**
+```c
+int state_init(state_t *state, int user_brightness, int dim_brightness,
+               int dim_timeout_sec, int off_timeout_sec);
+bool state_handle_event(state_t *state, state_event_t event, int *new_brightness);
+state_type_t state_get_current(const state_t *state);
+int state_get_brightness(const state_t *state);
+int state_get_next_timeout(const state_t *state);
+```
+
+**config.h - Configuration Management:**
+```c
+config_t *config_init(void);
+int config_load(config_t *config, const char *path);
+int config_validate(config_t *config, int max_brightness);
+int config_safe_atoi(const char *str, int *result);
+```
+
+**display.h - Backlight HAL:**
+```c
+display_t *display_open(const char *backlight_name);
+int display_set_brightness(display_t *display, int brightness);
+int display_get_brightness(display_t *display);
+void display_close(display_t *display);
+```
+
+**input.h - Touch Input HAL:**
+```c
+input_t *input_open(const char *device_name);
+int input_get_fd(input_t *input);
+bool input_has_touch_event(input_t *input);
+void input_close(input_t *input);
+```
+
+**timer.h - POSIX Timer Wrapper:**
+```c
+timer_t *timer_create(int fd_to_track);
+int timer_arm(timer_t *timer, int milliseconds);
+void timer_disarm(timer_t *timer);
+void timer_close(timer_t *timer);
+```
+
+**Usage Example:**
+```c
+/* Initialize modules */
+config_t *config = config_init();
+config_load(config, "/etc/touch-timeout.conf");
+config_validate(config, 255);
+
+state_t state;
+state_init(&state, config->brightness, config->dim_brightness,
+           config->dim_timeout, config->off_timeout);
+
+display_t *display = display_open(config->backlight);
+input_t *input = input_open(config->device);
+
+/* Event loop */
+struct pollfd fds[2] = {
+    {input_get_fd(input), POLLIN, 0},
+    {timer_get_fd(timer), POLLIN, 0}
+};
+
+while (running) {
+    poll(fds, 2, -1);
+
+    if (fds[0].revents & POLLIN && input_has_touch_event(input)) {
+        int new_brightness;
+        state_handle_event(&state, EVENT_TOUCH, &new_brightness);
+        display_set_brightness(display, new_brightness);
+    }
+
+    if (fds[1].revents & POLLIN) {
+        int new_brightness;
+        state_handle_event(&state, EVENT_TIMEOUT, &new_brightness);
+        display_set_brightness(display, new_brightness);
+    }
+}
+```
+
 ## Performance Metrics
 
 | Metric | v1.0.0 | v2.0.0 | Change |
@@ -340,7 +416,7 @@ Benefits:
 | Lines of code | 594 | 850 | +43% |
 | Modules | 1 | 6 | +500% |
 | Test files | 1 | 2 | +100% |
-| Test count | 48 | 50 | +4% |
+| Test count | 48 | 54 | +13% |
 | Cyclomatic complexity (max) | 15 | 8 | -47% |
 | SD writes (per hour) | ~360 | ~36 | -90% |
 
@@ -382,7 +458,7 @@ sudo /tmp/touch-timeout-staging/install-on-rpi.sh
 
 Binary naming convention: `touch-timeout-{version}-{arch}` (e.g., `touch-timeout-2.0.0-arm64`)
 
-See DEPLOYMENT.md for prerequisites, rollback procedures, and troubleshooting.
+See [INSTALLATION.md](INSTALLATION.md) for deployment procedures, prerequisites, and troubleshooting.
 
 ## Migration Path
 
@@ -405,7 +481,6 @@ For existing v1.0.0 users:
 ### v2.1.0: Logging & Runtime Control (Planned)
 - [ ] Configurable log levels (`log_level=0/1/2` in config file)
 - [ ] Silent production mode to eliminate SD card writes
-- [ ] Extended dim timeout range (1%-100% of off_timeout, currently limited to 10%-100%)
 - [ ] DBus interface for runtime configuration changes without service restart
   - Enables GUI control panels and integration with desktop environments
 
