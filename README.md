@@ -24,11 +24,8 @@ make && sudo make install
 **Cross-compile on Linux/WSL2 and deploy to Raspberry Pi:**
 
 ```bash
-# On build machine
+# One-step deployment (auto-install, recommended)
 ./scripts/deploy-arm.sh <IP_ADDRESS> arm64
-
-# On Raspberry Pi (after deployment)
-sudo /run/touch-timeout-staging/install.sh
 ```
 
 → **[Complete guide: INSTALLATION.md - Method 2](INSTALLATION.md#method-2-remote-deployment-cross-compilation)**
@@ -48,11 +45,10 @@ sudo /run/touch-timeout-staging/install.sh
 
 | Event | Action |
 |-------|--------|
-| **Service start** | Reads `/etc/touch-timeout.conf`, applies brightness settings |
+| **Service start** | Uses hardcoded defaults or `/etc/touch-timeout.conf` if present (see [Configuration](#configuration)) |
 | **Touch detected** | Restores full brightness, resets idle timer |
 | **Idle (10% of timeout)** | Dims to `user_brightness ÷ 10` (minimum 10) |
 | **Idle (100% of timeout)** | Powers off display (brightness = 0) |
-| **No config file** | Uses defaults: 150 brightness, 300s timeout, 10% dim time (30s for default 300s timeout) |
 | **Invalid config** | Logs warning, falls back to defaults |
 | **Systemd stop** | Gracefully closes file descriptors |
 
@@ -106,51 +102,22 @@ ssh root@192.168.1.XXX "bash /tmp/test-performance.sh"
 
 ## Configuration
 
-Edit `/etc/touch-timeout.conf`:
+**Works out-of-box with sensible defaults** - no configuration required!
 
-```ini
-brightness=150            # Active brightness (15-255, recommend ≤200 for RPi display)
-off_timeout=300           # Seconds until screen off (minimum 10)
-dim_percent=10            # When to dim (1-100% of off_timeout, default: 10)
-backlight=rpi_backlight   # Device name in /sys/class/backlight/
-device=event0             # Touchscreen in /dev/input/
-```
-**Note**: For RPi official 7" touchscreen, brightness >200 reduces brightness and current draw (see https://forums.raspberrypi.com/viewtopic.php?t=216821). Recommend `brightness=200` or lower.
+**Hardcoded Defaults:**
+- `brightness=150` - Active screen brightness (15-255, recommend ≤200 for RPi official 7" touchscreen)
+- `off_timeout=300` - 5 minutes until screen off (minimum 10 seconds)
+- `dim_percent=10` - Dims at 10% of timeout (e.g., 30s for default 300s timeout)
+- `backlight=rpi_backlight` - RPi official 7" touchscreen backlight device
+- `device=event0` - First input device
 
-## Product Roadmap
+**To customize:** See [INSTALLATION.md - Configuration](INSTALLATION.md#configuration) for complete examples:
+- Creating `/etc/touch-timeout.conf` (copy/paste template provided)
+- Using CLI arguments in systemd service file
 
-### v1.0.1: Zero-Wear Patch (In Progress)
-- [ ] **Configurable Logging**: `log_level=0/1/2` in config (0=silent, 1=info, 2=debug)
-- [ ] **Debug Flag**: `-d/--debug` enables verbose logging for testing
-- [ ] **Foreground Mode**: `-f` flag for development (uses stderr, no daemonize)
-- [ ] **Reduced Boot Writes**: Batched startup logs (3→1 syslog call, 67% reduction)
-- [ ] **Quiet Production**: Default `log_level=0` eliminates SD writes from logging
-- [ ] **NTP Stability**: Replaced hot-path asserts with graceful error handling (prevents crashes on clock adjustments)
-- [ ] **SD Write Impact**: 1 write/boot + 0 runtime events (vs. 10-100/day in v1.0.0)
+## Future Roadmap
 
-**Migration Note**: Add `log_level=0` to `/etc/touch-timeout.conf` for silent operation.  
-**Dev Tip**: Use `touch-timeout -df` for foreground debugging without config changes.
-
-### v1.1.0: Clean Foundation (Planned)
-- [ ] **Modular Architecture**: 3-file split (`logic.c/h`, `io.c/h`, `main.c`)
-- [ ] **Unit Tests**: Makefile test target with edge-case coverage
-- [ ] **Config-Based Logging**: `log_level=none/info/debug` in `/etc/touch-timeout.conf` (replaces `-d` flag)
-- [ ] **Enhanced Dim Control**: Configurable `dim_brightness` (% of brightness, 5%-100%, min 10)
-- [ ] **Extended Dim Timeout**: Support 1%-100% of `off_timeout` (1s minimum)
-
-### v1.2.0: Hotplug Foundation (Planned)
-- [ ] **USB Hotplug**: `inotify` monitoring for plug-and-play device detection
-- [ ] **Multi-Device Polling**: Support up to 10 input devices (static config list)
-- [ ] **Robust Event Loop**: Handle device add/remove during runtime
-
-### v1.3.0: Universal Input (Planned)
-- [ ] **Keyboard/Mouse Support**: Monitor all input device types (not just touch)
-- [ ] **Auto-Discovery**: Scans `/dev/input/by-path/` on startup (zero config)
-- [ ] **Device Classification**: Filters by capability flags (touch vs keyboard vs mouse)
-
-### v1.4.0: Audio Integration (Proposed)
-- [ ] **Playback Detection**: Optional ALSA/PulseAudio activity resets timeout
-- [ ] **SSH Detection**: Prevent screen-off during remote sessions
+This branch (refactoring-v2) implements v2.0.0 with modular architecture and CERT C security compliance. For planned v2.1+ features (logging levels, hotplug support, multi-input), see [ARCHITECTURE.md - Future Enhancements](ARCHITECTURE.md#future-enhancements-v21)
 
 ## To build and deploy:
 see installation instructions (INSTALLATION.md)
