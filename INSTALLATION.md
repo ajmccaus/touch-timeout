@@ -204,14 +204,9 @@ ssh pi@<IP_ADDRESS> "systemctl is-active touch-timeout.service && echo OK"
 
 ## Configuration
 
-**The daemon works out-of-box with hardcoded defaults** - no configuration required!
+**The daemon works out-of-box** - no configuration required! See [README.md - Configuration](README.md#configuration) for default values.
 
-**Hardcoded defaults:**
-- `brightness=150` (range: 15-255, recommend ≤200 for RPi official touchscreen)
-- `off_timeout=300` (range: ≥10 seconds)
-- `dim_percent=10` (range: 1-100%)
-- `backlight=rpi_backlight`
-- `device=event0`
+To customize, choose one of the options below:
 
 ### Option 1: Create Config File (Recommended for Multiple Settings)
 
@@ -308,10 +303,29 @@ sudo systemctl status touch-timeout.service
 sudo journalctl -u touch-timeout.service -f
 ```
 
+**Quick health check:**
+```bash
+top -bn1 -p $(pgrep touch-timeout) | tail -1
+# Expected: <1% CPU, ~0.2MB RSS
+```
+
 **Test touch responsiveness:**
 1. Wait for timeout (screen should dim, then turn off)
 2. Touch screen (should restore brightness immediately)
 3. Check logs for state transitions
+
+---
+
+## Performance Data Collection (Optional)
+
+Collect metrics to verify [README.md](README.md#performance) claims.
+
+```bash
+scp scripts/test-performance.sh <USER>@<IP>:/run/
+ssh <USER>@<IP> "bash /run/test-performance.sh [seconds]" | tee perf.txt
+```
+
+Default 30 seconds. Outputs CPU average, memory, SD writes, FD count.
 
 ---
 

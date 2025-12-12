@@ -220,12 +220,42 @@ State Machine Module:  21 tests
   - Integration: 1 test
 
 Performance Testing (scripts/test-performance.sh):
-  - CPU usage monitoring (30s baseline)
-  - Memory leak detection (RSS growth tracking)
-  - SD card write activity measurement
-  - File descriptor leak detection
-  - System call profiling (if strace available)
-  - Minimal output mode to reduce logging overhead
+  Quick mode (~35s):
+    - CPU usage monitoring (30s baseline)
+    - Memory leak detection (RSS growth tracking)
+    - SD card write activity measurement
+    - File descriptor leak detection
+
+  Full cycle mode (~70s):
+    - All quick mode tests
+    - State transition verification (FULL → DIMMED → OFF)
+    - Touch latency measurement (<200ms claim)
+    - Active CPU measurement during touch events
+    - Uses CLI to temporarily run with short timeout
+```
+
+**Manual Debug Commands (Developer Reference):**
+
+For deep debugging beyond what the test script provides:
+
+```bash
+# Get process ID
+PID=$(pgrep touch-timeout)
+
+# Real-time resource monitoring
+top -bn1 -p $PID | tail -1
+
+# SD card writes (run twice with delay to measure delta)
+grep write_bytes /proc/$PID/io
+
+# File descriptor count (should stay constant)
+ls /proc/$PID/fd | wc -l
+
+# System call profiling (requires strace, root)
+timeout 10 strace -c -p $PID 2>&1 | tail -20
+
+# Watch brightness changes in real-time
+watch -n 0.5 cat /sys/class/backlight/*/brightness
 ```
 
 ### 8. SD Card Write Optimization

@@ -34,14 +34,14 @@ make && sudo make install
 
 ## Features
 
-- **Zero-configuration defaults**: Works out-of-box with sensible settings
+- **Works out-of-box with sensible defaults** - no configuration required!
 - **Configurable dimming**: Percentage-based dim timing (1-100% of off timeout)
-- **Power efficient**: <0.1% CPU usage during idle
+- **Power efficient**: <0.05% CPU usage during idle
 - **Hardware-optimized**: Respects display max brightness, prevents flicker
 - **Robust**: Handles missed poll cycles, system suspend/resume
 - Systemd integration with graceful shutdown
 
-## Behavior
+## Default Behavior
 
 | Event | Action |
 |-------|--------|
@@ -58,7 +58,7 @@ Benchmarked on Raspberry Pi 4 (1.5GHz ARM Cortex-A72):
 
 | Metric | Value | Notes |
 |--------|-------|-------|
-| **CPU (idle)** | 0.0% | Poll-based event loop with zero overhead |
+| **CPU (idle)** | <0.05% | Poll-based event loop, near-zero overhead |
 | **CPU (active)** | <1% | Brief spikes during touch events |
 | **Memory (RSS)** | 0.2 MB | Minimal footprint, no leaks after extended runtime |
 | **Latency** | <200ms | Touch-to-restore response time |
@@ -66,43 +66,7 @@ Benchmarked on Raspberry Pi 4 (1.5GHz ARM Cortex-A72):
 
 Tested over 24+ hours continuous operation with no performance degradation.
 
-## Performance Testing
-
-Quick manual tests on the RPi:
-
-```bash
-# Get process ID
-PID=$(pgrep touch-timeout)
-
-# CPU and memory usage
-ps aux | grep touch-timeout
-
-# Detailed resource usage
-top -b -n 1 -p $PID
-
-# SD card writes (run twice with delay to measure delta)
-grep write_bytes /proc/$PID/io
-
-# File descriptor count (should stay constant)
-ls /proc/$PID/fd | wc -l
-
-# System call count over 10 seconds
-timeout 10 strace -c -p $PID 2>&1 | tail -20
-```
-
-For comprehensive automated testing, use the performance test script:
-
-```bash
-# Transfer script to RPi
-scp scripts/test-performance.sh root@192.168.1.XXX:/tmp/
-
-# Run on RPi
-ssh root@192.168.1.XXX "bash /tmp/test-performance.sh"
-```
-
 ## Configuration
-
-**Works out-of-box with sensible defaults** - no configuration required!
 
 **Hardcoded Defaults:**
 - `brightness=150` - Active screen brightness (15-255, recommend ≤200 for RPi official 7" touchscreen)
@@ -119,12 +83,9 @@ ssh root@192.168.1.XXX "bash /tmp/test-performance.sh"
 
 See [ROADMAP.md](ROADMAP.md) for planned v2.1+ features (debugging modes, multi-device input, USB hotplug).
 
-## To build and deploy:
-see installation instructions (INSTALLATION.md)
-
 ## Support Policy
-This is a hobby project maintained in my spare time.
+This is a learning project maintained in my spare time.
 - Bug reports: Welcomed with reproduction steps
 - Feature requests: Considered but not guaranteed
-- PRs: We'll see
+- PRs: No guarantees on response time
 - Commercial support: Not available

@@ -34,6 +34,10 @@ Planned features for touch-timeout v2.x releases.
 - Auto-recovery when device reappears
 - Log warning instead of crash
 
+**Codebase review:**
+- Review against MVP/Lean principles for over-engineering
+- Identify simplification opportunities
+
 ---
 
 ## v2.2.0 - Multi-Device Input
