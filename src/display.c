@@ -100,7 +100,7 @@ display_t *display_open(const char *backlight_name) {
 
     display->min_brightness = CONFIG_MIN_BRIGHTNESS;
 
-    syslog(LOG_INFO, "Display opened: %s (max=%d, current=%d)",
+    syslog(LOG_DEBUG, "Display opened: %s (max=%d, current=%d)",
            backlight_name, display->max_brightness, display->current_brightness);
 
     return display;

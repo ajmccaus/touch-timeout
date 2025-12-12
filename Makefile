@@ -65,8 +65,8 @@ help:
 	@echo "  make version      - Generate version.h from VERSION_* variables"
 	@echo "  make test         - Run unit tests"
 	@echo "  make coverage     - Generate code coverage report"
-	@echo "  make install      - Install daemon, systemd service, and config"
-	@echo "  make uninstall    - Remove installed files (preserves config)"
+	@echo "  make install      - Install daemon and systemd service"
+	@echo "  make uninstall    - Remove installed files"
 	@echo "  make clean        - Remove build artifacts"
 	@echo "  make help         - Display this help message"
 	@echo ""
@@ -164,18 +164,23 @@ coverage:
 
 # Install to system
 install: $(TARGET)
-	install -D -m 755 $(TARGET) $(DESTDIR)$(BINDIR)/$(TARGET)
+	install -D -m 755 $(TARGET) $(DESTDIR)$(BINDIR)/touch-timeout
 	install -D -m 644 systemd/touch-timeout.service $(DESTDIR)$(SYSTEMD_UNIT_DIR)/touch-timeout.service
-	install -D -m 644 config/touch-timeout.conf $(DESTDIR)$(CONFIG_DIR)/touch-timeout.conf
 	@echo "Installation complete. To enable service:"
 	@echo "  sudo systemctl daemon-reload"
 	@echo "  sudo systemctl enable touch-timeout.service"
 	@echo "  sudo systemctl start touch-timeout.service"
+	@echo ""
+	@echo "Uses hardcoded defaults. To customize:"
+	@echo "  - Create /etc/touch-timeout.conf (see INSTALLATION.md)"
+	@echo "  - Or edit systemd service file with CLI arguments"
 
 # Uninstall from system
 uninstall:
 	systemctl stop touch-timeout.service 2>/dev/null || true
 	systemctl disable touch-timeout.service 2>/dev/null || true
-	rm -f $(DESTDIR)$(BINDIR)/$(TARGET)
+	rm -f $(DESTDIR)$(BINDIR)/touch-timeout
 	rm -f $(DESTDIR)$(SYSTEMD_UNIT_DIR)/touch-timeout.service
-	@echo "Uninstallation complete. Config file preserved at $(CONFIG_DIR)/touch-timeout.conf"
+	systemctl daemon-reload 2>/dev/null || true
+	@echo "Uninstallation complete."
+	@echo "Note: If you created /etc/touch-timeout.conf, it has been preserved."

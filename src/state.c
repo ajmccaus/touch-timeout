@@ -68,7 +68,7 @@ bool state_handle_event(state_t *state, state_event_t event, int *new_brightness
                 state->current_state = STATE_FULL;
                 *new_brightness = state->user_brightness;
                 brightness_changed = true;
-                syslog(LOG_INFO, "Touch detected - restored to FULL brightness %d",
+                syslog(LOG_DEBUG, "Touch detected - restored to FULL brightness %d",
                        *new_brightness);
             }
             /* Update last input time */
@@ -92,14 +92,14 @@ bool state_handle_event(state_t *state, state_event_t event, int *new_brightness
                 state->current_state = STATE_OFF;
                 *new_brightness = 0;
                 brightness_changed = true;
-                syslog(LOG_INFO, "Display OFF (idle=%.0fs)", idle);
+                syslog(LOG_DEBUG, "Display OFF (idle=%.0fs)", idle);
 
             } else if (idle >= state->dim_timeout_sec && state->current_state == STATE_FULL) {
                 /* Transition to DIMMED (only from FULL) */
                 state->current_state = STATE_DIMMED;
                 *new_brightness = state->dim_brightness;
                 brightness_changed = true;
-                syslog(LOG_INFO, "Display DIMMED to %d (idle=%.0fs)",
+                syslog(LOG_DEBUG, "Display DIMMED to %d (idle=%.0fs)",
                        *new_brightness, idle);
             }
             break;

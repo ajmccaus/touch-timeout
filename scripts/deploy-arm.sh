@@ -27,6 +27,7 @@ RPI_STAGING_DIR="/run/touch-timeout-staging"
 ARCH="${2:-arm64}"
 BUILD_DIR="build"
 BATCH_MODE=""
+MANUAL_MODE=0  # Default: auto-install
 
 # Helper functions
 log_info() {
@@ -56,13 +57,13 @@ if [[ $# -lt 1 ]]; then
     echo "Options:"
     echo "  --user USER     SSH user for deployment (default: root)"
     echo "  --batch         Batch mode - requires passwordless SSH (for CI/CD)"
+    echo "  --manual        Manual install - transfer only, skip auto-install"
     echo ""
     echo "Examples:"
-    echo "  $0 192.168.1.127                          # Deploy arm64 as root"
-    echo "  $0 192.168.1.127 arm32                    # Deploy arm32 as root"
+    echo "  $0 192.168.1.127                          # Deploy + auto-install (default)"
+    echo "  $0 192.168.1.127 arm64 --manual           # Transfer only, manual install"
     echo "  $0 192.168.1.127 arm64 --user pi          # Deploy as user 'pi'"
-    echo "  $0 192.168.1.127 arm64 --batch            # CI/CD mode (no passwords)"
-    echo "  $0 192.168.1.127 arm64 --user pi --batch  # Custom user + batch mode"
+    echo "  $0 192.168.1.127 arm64 --batch            # CI/CD mode (auto-install)"
     exit 1
 fi
 
@@ -78,6 +79,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --batch)
             BATCH_MODE="-o BatchMode=yes"
+            shift
+            ;;
+        --manual)
+            MANUAL_MODE=1
             shift
             ;;
         *)
@@ -190,11 +195,6 @@ log_success "Install script transferred"
 log_info "Transferring systemd service file..."
 scp -q "$PROJECT_ROOT/systemd/touch-timeout.service" "$RPI_USER@$RPI_IP:$RPI_STAGING_DIR/" 2>/dev/null || \
     log_warn "Systemd service file not found (optional)"
-
-# Copy config file
-log_info "Transferring config file..."
-scp -q "$PROJECT_ROOT/config/touch-timeout.conf" "$RPI_USER@$RPI_IP:$RPI_STAGING_DIR/" || \
-    log_warn "Config file not found"
 echo
 
 # Summary and next steps
@@ -202,17 +202,56 @@ echo -e "${GREEN}========================================${NC}"
 log_success "Deployment package ready on RPi4"
 echo -e "${GREEN}========================================${NC}"
 echo
-log_info "Next steps:"
-echo "  1. SSH into RPi4:"
-echo "     ssh $RPI_USER@$RPI_IP"
-echo
-echo "  2. Run the installation script:"
-echo "     sudo $RPI_STAGING_DIR/install.sh"
-echo
-log_warn "The install script will:"
-echo "  - Install binary: /usr/bin/$VERSIONED_BINARY"
-echo "  - Create symlink: /usr/bin/touch-timeout → $VERSIONED_BINARY"
-echo "  - Install config: /etc/touch-timeout.conf (if not exists)"
-echo "  - Install systemd service (if systemd available)"
-echo "  - Restart service (if running)"
-echo
+
+# Auto-install by default, unless --manual flag used
+if [[ "$MANUAL_MODE" == "0" ]]; then
+    log_info "Running installation automatically..."
+    echo
+
+    # Determine if sudo is needed (root user doesn't need sudo)
+    if [[ "$RPI_USER" == "root" ]]; then
+        INSTALL_CMD="$RPI_STAGING_DIR/install.sh"
+    else
+        INSTALL_CMD="sudo $RPI_STAGING_DIR/install.sh"
+    fi
+
+    # Run install script remotely
+    if ssh $BATCH_MODE "$RPI_USER@$RPI_IP" "$INSTALL_CMD"; then
+        echo
+        echo -e "${GREEN}========================================${NC}"
+        log_success "Deployment and installation complete!"
+        echo -e "${GREEN}========================================${NC}"
+        echo
+        log_info "View logs: ssh $RPI_USER@$RPI_IP 'journalctl -u touch-timeout.service -f'"
+        log_info "Check status: ssh $RPI_USER@$RPI_IP 'systemctl status touch-timeout.service'"
+    else
+        log_error "Installation failed"
+        echo
+        log_warn "Manual recovery steps:"
+        echo "  1. SSH into RPi: ssh $RPI_USER@$RPI_IP"
+        echo "  2. Check logs: journalctl -u touch-timeout.service -n 50"
+        echo "  3. Retry install: $INSTALL_CMD"
+        exit 1
+    fi
+else
+    # Manual mode - show next steps
+    log_info "Manual mode - installation skipped"
+    echo
+    log_info "Next steps:"
+    echo "  1. SSH into RPi4:"
+    echo "     ssh $RPI_USER@$RPI_IP"
+    echo
+    echo "  2. Run the installation script:"
+    if [[ "$RPI_USER" == "root" ]]; then
+        echo "     $RPI_STAGING_DIR/install.sh"
+    else
+        echo "     sudo $RPI_STAGING_DIR/install.sh"
+    fi
+    echo
+    log_warn "The install script will:"
+    echo "  - Install binary: /usr/bin/$VERSIONED_BINARY"
+    echo "  - Create symlink: /usr/bin/touch-timeout → $VERSIONED_BINARY"
+    echo "  - Install systemd service (if systemd available)"
+    echo "  - Restart service (if running)"
+    echo
+fi

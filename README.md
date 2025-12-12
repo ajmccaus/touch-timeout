@@ -1,7 +1,7 @@
 # touch-timeout
 Lightweight touchscreen backlight manager for Raspberry Pi 7" displays. Automatically dims and powers off the display during inactivity, instantly restoring on touch. Optimized for minimal Linux distributions like HifiBerry OS.
 
-**Branch Context:** You are on the `refactoring-v2` branch (v2.0.0 modular architecture). The roadmap below describes the `main` branch (v1.x monolithic). See ARCHITECTURE.md for v2.0 details.
+**Version:** 2.0.0 | [CHANGELOG](CHANGELOG.md) | [ARCHITECTURE](ARCHITECTURE.md)
 
 ## Getting Started
 
@@ -117,7 +117,7 @@ ssh root@192.168.1.XXX "bash /tmp/test-performance.sh"
 
 ## Future Roadmap
 
-This branch (refactoring-v2) implements v2.0.0 with modular architecture and CERT C security compliance. For planned v2.1+ features (logging levels, hotplug support, multi-input), see [ARCHITECTURE.md - Future Enhancements](ARCHITECTURE.md#future-enhancements-v21)
+See [ROADMAP.md](ROADMAP.md) for planned v2.1+ features (debugging modes, multi-device input, USB hotplug).
 
 ## To build and deploy:
 see installation instructions (INSTALLATION.md)

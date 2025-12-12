@@ -17,7 +17,7 @@ This philosophy drives specific design choices:
 - Password authentication by default (SSH keys optional) - first-time users can deploy immediately
 - `/run` for staging instead of `/tmp` - guaranteed tmpfs across all systems
 - Brightness caching in HAL - 90% reduction in sysfs writes
-- `SyslogLevel=warning` in systemd - reduce journal writes during 24/7 operation
+- `LogLevelMax=info` in systemd + LOG_DEBUG for runtime messages - zero journal writes during 24/7 operation
 - Pure state machine with zero I/O - testable without hardware mocking
 
 ## Features and Usage
@@ -123,13 +123,14 @@ TimeoutStopSec=5s        # Graceful shutdown window
 ### 4. Logging System
 
 **Current Implementation (v2.0.0):**
-- Uses syslog for all messages (LOG_INFO, LOG_WARNING, LOG_ERR)
-- All logs sent to systemd journal
-- View logs: `journalctl -u touch-timeout -f`
-- No configurable verbosity (all messages logged)
+- Startup messages use `LOG_INFO` (version, config, ready signal)
+- Runtime state transitions use `LOG_DEBUG` (touch, dim, off events)
+- Errors use `LOG_ERR`, warnings use `LOG_WARNING`
+- systemd `LogLevelMax=info` filters DEBUG by default (zero runtime journal writes)
+- View all logs: `journalctl -u touch-timeout -f -p debug`
 
-**Future Enhancement:**
-Configurable log levels planned for v2.1.0 (`log_level=0/1/2` in config file) to reduce SD card writes in production mode.
+**Debugging:**
+Run daemon manually to see all messages: `sudo /usr/bin/touch-timeout`
 
 ### 5. Configuration Management
 
@@ -238,9 +239,10 @@ Raspberry Pi SD cards have limited write cycles (~10,000-100,000 depending on ca
 - Trade-off: `/run` is more robust across distributions than assuming `/tmp` is tmpfs
 
 **Layer 2: Logging (continuous runtime writes)**
-- `SyslogLevel=warning` in systemd service suppresses info/debug messages
-- Default journal mode still captures errors and warnings
-- Impact: Reduces journal writes by ~90% during normal 24/7 operation
+- Runtime messages (touch/dim/off) use `LOG_DEBUG` level
+- `LogLevelMax=info` in systemd service filters DEBUG messages
+- Startup INFO messages visible, runtime DEBUG filtered
+- Impact: Zero journal writes during normal 24/7 operation (startup only)
 - Different from `QUIET_MODE` (which only affects install-time output)
 
 **Layer 3: Runtime state transitions (continuous writes)**
@@ -448,13 +450,20 @@ make clean-all    # Remove all build artifacts (native + cross-compiled)
 **Cross-compilation and deployment workflow:**
 
 ```bash
-# Step 1: Build and transfer from WSL2/Linux
+# Default: One-step deployment (auto-install)
 ./scripts/deploy-arm.sh <IP_ADDRESS> arm64
 
-# Step 2: SSH into RPi and install
-ssh root@<IP_ADDRESS>
-sudo /tmp/touch-timeout-staging/install-on-rpi.sh
+# Custom user (for multi-user systems)
+./scripts/deploy-arm.sh <IP_ADDRESS> arm64 --user <username>
+
+# Manual install (transfer only, skip auto-install)
+./scripts/deploy-arm.sh <IP_ADDRESS> arm64 --manual
 ```
+
+**Default behavior:** Auto-install (one-step deployment)
+**Default user:** `root` (optimized for Buildroot/HifiBerryOS where root is the only user)
+
+For manual control, use `--manual` flag to skip auto-install and run `install.sh` yourself.
 
 Binary naming convention: `touch-timeout-{version}-{arch}` (e.g., `touch-timeout-2.0.0-arm64`)
 
@@ -478,32 +487,7 @@ For existing v1.0.0 users:
 
 ## Future Enhancements (v2.1+)
 
-### v2.1.0: Logging & Runtime Control (Planned)
-- [ ] Configurable log levels (`log_level=0/1/2` in config file)
-- [ ] Silent production mode to eliminate SD card writes
-- [ ] DBus interface for runtime configuration changes without service restart
-  - Enables GUI control panels and integration with desktop environments
-
-### v2.2.0: Multi-Input & Hotplug (Planned)
-- [ ] USB hotplug via inotify monitoring
-- [ ] Multi-device input polling (up to 10 devices)
-- [ ] Auto-scan `/dev/input/by-path/` with capability filtering
-- [ ] Handle device add/remove during runtime
-
-### v2.3.0: Advanced Input Classification (Planned)
-- [ ] Device classification (touchscreen, mouse, keyboard)
-- [ ] Auto-enable only activity-relevant devices
-- [ ] Zero-config wake-on-input for mixed setups
-
-### v2.4.0: Optional Activity Sources (Proposed)
-- [ ] ALSA/PulseAudio playback detection prevents timeout
-- [ ] SSH session detection prevents screen-off
-- [ ] Toggleable activity sources in config
-
-### Testing & Quality (Ongoing)
-- [ ] Integration tests with hardware mocking
-- [ ] Hotplug stress tests (connect/disconnect cycles)
-- [ ] Configuration hot-reload (SIGHUP handler)
+See [ROADMAP.md](ROADMAP.md) for planned features and version timeline.
 
 ## References
 

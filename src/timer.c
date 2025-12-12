@@ -46,7 +46,7 @@ timer_ctx_s *timer_create_ctx(void) {
         return NULL;
     }
 
-    syslog(LOG_INFO, "Timer created with CLOCK_MONOTONIC (fd=%d)", timer->timerfd);
+    syslog(LOG_DEBUG, "Timer created with CLOCK_MONOTONIC (fd=%d)", timer->timerfd);
 
     return timer;
 }

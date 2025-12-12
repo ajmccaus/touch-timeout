@@ -6,14 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **touch-timeout** is a lightweight touchscreen backlight manager daemon for Raspberry Pi 7" displays. It automatically dims and powers off the display during inactivity and instantly restores brightness on touch.
 
-Currently on the `refactoring-v2` branch (v2.0.0) implementing a modular architecture. The `main` branch contains the v1.x monolithic implementation.
+**Current Version:** v2.0.0 (released 2025-12-11)
 
-**v2.0.0 Status:** Pre-release planning complete
-- Comprehensive 20-30 hour release plan prepared (see `V2_RELEASE_PLAN.md` symlink in project root)
-- Key tasks: config hardening, security review, hardware testing, documentation
-- Breaking changes: `poll_interval` removed (v1.0 artifact), `dim_percent` default 50→10 and minimum 10→1%, `brightness` default 100→150
-- New features: graceful config fallback, dim_timeout clamping (min 5s), ROADMAP.md documenting v2.1-v2.4+ plans
-- **Awaiting:** Hardware validation before production release
+Modular architecture with event-driven I/O, comprehensive testing, and CERT C security compliance. See [CHANGELOG.md](CHANGELOG.md) for release notes and [ROADMAP.md](ROADMAP.md) for future plans.
 
 ## Design Principle
 
@@ -347,12 +342,9 @@ systemctl status touch-timeout.service
 
 ## Future Roadmap (v2.1+)
 
-- **v2.1.0**: Configurable log levels, silent production mode
-- **v2.2.0**: USB hotplug, multi-device input
-- **v2.3.0**: Input device auto-classification
-- **v2.4.0**: Optional activity sources (ALSA, SSH detection)
-
-See ARCHITECTURE.md for detailed feature roadmap.
+See [ROADMAP.md](ROADMAP.md) for planned features:
+- **v2.1.0**: Debugging modes (-f, -d flags), device disconnection handling
+- **v2.2.0**: Multi-device input, USB hotplug
 
 ## Compiler & Flags
 

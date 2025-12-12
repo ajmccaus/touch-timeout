@@ -51,7 +51,7 @@ input_t *input_open(const char *device_name) {
 
     snprintf(input->device_name, sizeof(input->device_name), "%s", device_name);
 
-    syslog(LOG_INFO, "Input device opened: %s (fd=%d)", dev_path, input->fd);
+    syslog(LOG_DEBUG, "Input device opened: %s (fd=%d)", dev_path, input->fd);
 
     return input;
 }
