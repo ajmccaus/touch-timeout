@@ -5,6 +5,18 @@ All notable changes to touch-timeout will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Improved
+
+- **Performance script UX**: Progress dots instead of per-line CPU output, added CPU_MAX_PCT metric
+- **Script robustness**: Process death detection mid-test, safe arithmetic for edge cases
+- **Documentation consistency**: Fixed CPU claim (0.1% -> 0.05% in README features)
+
+### Changed
+
+- **test-deployment.sh**: Simplified from 112 to 47 lines (syntax validation focus)
+
 ## [2.0.0] - 2025-12-11
 
 Complete architectural refactoring from monolithic to modular design with enhanced security, testing, and user experience improvements.
