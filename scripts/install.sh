@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# install-on-rpi.sh - Install touch-timeout binary with versioning and symlink management
+# install.sh - Install touch-timeout binary with versioning and symlink management
 #
 # This script runs on the RPi4 and handles:
 # - Verification of binary and permissions
@@ -9,7 +9,7 @@
 # - Service restart
 #
 # Optimized for SD card wear: Minimizes logging output and journal writes.
-# Usage: sudo /tmp/touch-timeout-staging/install-on-rpi.sh
+# Usage: sudo /run/touch-timeout-staging/install.sh
 #
 
 set -euo pipefail
@@ -25,7 +25,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # Paths
-STAGING_DIR="/tmp/touch-timeout-staging"
+STAGING_DIR="/run/touch-timeout-staging"
 INSTALL_DIR="/usr/bin"
 SYSTEMD_LINK="/etc/systemd/system/touch-timeout.service"
 
@@ -99,15 +99,6 @@ if [[ ! -x "$CURRENT_LINK" ]]; then
     exit 1
 fi
 
-# Install config file if present and not already installed
-if [[ -f "$STAGING_DIR/touch-timeout.conf" ]] && [[ ! -f "/etc/touch-timeout.conf" ]]; then
-    log_info "Installing config file..."
-    install -m 644 "$STAGING_DIR/touch-timeout.conf" "/etc/touch-timeout.conf"
-    log_success "Config installed: /etc/touch-timeout.conf"
-elif [[ -f "/etc/touch-timeout.conf" ]]; then
-    log_info "Config already exists: /etc/touch-timeout.conf (not overwriting)"
-fi
-
 # Install systemd service if systemd is available and service file is present
 if command -v systemctl >/dev/null 2>&1 && [[ -f "$STAGING_DIR/touch-timeout.service" ]]; then
     log_info "Installing systemd service..."
@@ -115,9 +106,10 @@ if command -v systemctl >/dev/null 2>&1 && [[ -f "$STAGING_DIR/touch-timeout.ser
     log_success "Service installed"
 fi
 
-# Reload systemd and start service (if systemd available)
+# Reload systemd, enable, and start service (if systemd available)
 if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload
+    systemctl enable touch-timeout.service 2>/dev/null || true
     if ! systemctl start touch-timeout.service; then
         log_error "Failed to start touch-timeout service"
         exit 1
