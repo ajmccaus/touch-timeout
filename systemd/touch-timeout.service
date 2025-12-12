@@ -1,13 +1,32 @@
 [Unit]
 Description=Touchscreen Brightness & Timeout Manager
+Documentation=man:touch-timeout(1)
 After=multi-user.target systemd-modules-load.service systemd-backlight@.service
 StartLimitIntervalSec=0
 
 [Service]
 Type=simple
 ExecStart=/usr/bin/touch-timeout
+# To customize: Use CLI args (brightness off_timeout backlight device)
+#   Example: ExecStart=/usr/bin/touch-timeout 200 600 rpi_backlight event0
+# Or create /etc/touch-timeout.conf (see INSTALLATION.md)
 Restart=on-failure
 RestartSec=5
+
+# Logging configuration (reduce SD card writes)
+StandardOutput=journal
+StandardError=journal
+LogLevelMax=info
+
+# Watchdog configuration (requires systemd support in binary)
+# Daemon must send sd_notify("WATCHDOG=1") within this interval
+# If watchdog timeout occurs, systemd will restart the service
+# WatchdogSec=30s
+
+# Timeout configuration
+TimeoutStartSec=10s
+# Allow 5 seconds for graceful shutdown
+TimeoutStopSec=5s
 
 # Security hardening
 ProtectSystem=full
@@ -15,7 +34,9 @@ PrivateTmp=true
 NoNewPrivileges=true
 ReadWritePaths=/sys/class/backlight
 
-# Resource management (removed Nice/IOSchedulingClass for touch responsiveness)
+# Resource limits
+# No Nice/IOScheduling restrictions for touch responsiveness
+LimitNOFILE=64
 
 [Install]
 WantedBy=multi-user.target

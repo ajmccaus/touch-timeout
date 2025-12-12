@@ -1,53 +1,110 @@
+# Makefile for touch-timeout unit tests (modular version 2.0)
+#
+# Builds separate test executables for each module
+# Compiles source modules with coverage instrumentation
+# Supports code coverage with gcov/lcov
+
 CC = gcc
-CFLAGS = -Wall -Wextra -g -I./mocks
-COVERAGE_FLAGS = --coverage -fprofile-arcs -ftest-coverage
-TARGET = test_touch_timeout
+CFLAGS = -Wall -Wextra -std=c17 -I../src -D_POSIX_C_SOURCE=200809L
+COVERAGE_CFLAGS = --coverage -fprofile-arcs -ftest-coverage -g
+LDFLAGS = --coverage
 
-.PHONY: all test coverage clean report
+# Source directories
+SRC_DIR = ../src
+TEST_DIR = .
 
-# Build tests without coverage (fast)
-all: $(TARGET)
+# Source files (from src/)
+CONFIG_SRC = $(SRC_DIR)/config.c
+STATE_SRC = $(SRC_DIR)/state.c
+DISPLAY_SRC = $(SRC_DIR)/display.c
+INPUT_SRC = $(SRC_DIR)/input.c
+TIMER_SRC = $(SRC_DIR)/timer.c
 
-$(TARGET): test_touch_timeout.c ../touch-timeout.c
-	$(CC) $(CFLAGS) -o $(TARGET) test_touch_timeout.c
+# Test object files (built in test directory with coverage)
+CONFIG_OBJ = config_test.o
+STATE_OBJ = state_test.o
+DISPLAY_OBJ = display_test.o
+INPUT_OBJ = input_test.o
+TIMER_OBJ = timer_test.o
 
-# Run tests
-test: $(TARGET)
-	./$(TARGET)
+# Test executables
+TEST_TARGETS = test_config test_state
 
-# Build with coverage instrumentation
-coverage-build:
-	$(CC) $(CFLAGS) $(COVERAGE_FLAGS) -o $(TARGET) test_touch_timeout.c
+.PHONY: all test clean coverage help
 
-# Run tests with coverage and generate report
-# Uses xcrun llvm-cov for macOS, gcov for Linux
-coverage: clean coverage-build
-	./$(TARGET)
+all: $(TEST_TARGETS)
+
+# Build module objects with coverage instrumentation
+config_test.o: $(CONFIG_SRC)
+	$(CC) $(CFLAGS) $(COVERAGE_CFLAGS) -c -o $@ $<
+
+state_test.o: $(STATE_SRC)
+	$(CC) $(CFLAGS) $(COVERAGE_CFLAGS) -c -o $@ $<
+
+display_test.o: $(DISPLAY_SRC)
+	$(CC) $(CFLAGS) $(COVERAGE_CFLAGS) -c -o $@ $<
+
+input_test.o: $(INPUT_SRC)
+	$(CC) $(CFLAGS) $(COVERAGE_CFLAGS) -c -o $@ $<
+
+timer_test.o: $(TIMER_SRC)
+	$(CC) $(CFLAGS) $(COVERAGE_CFLAGS) -c -o $@ $<
+
+# Link test executables
+test_config: test_config.c $(CONFIG_OBJ)
+	$(CC) $(CFLAGS) $(COVERAGE_CFLAGS) -o $@ $^ $(LDFLAGS)
+
+test_state: test_state.c $(STATE_OBJ)
+	$(CC) $(CFLAGS) $(COVERAGE_CFLAGS) -o $@ $^ $(LDFLAGS)
+
+# Run all tests
+test: $(TEST_TARGETS)
+	@echo "========================================="
+	@echo "Running modular unit tests"
+	@echo "========================================="
+	@for test in $(TEST_TARGETS); do \
+		echo ""; \
+		echo "--- Running $$test ---"; \
+		./$$test || exit 1; \
+	done
 	@echo ""
-	@echo "========================================"
-	@echo "Coverage Report"
-	@echo "========================================"
-	@if [ "$(shell uname)" = "Darwin" ]; then \
-		xcrun llvm-cov gcov $(TARGET)-$(TARGET).gcda 2>/dev/null; \
-	else \
-		gcov $(TARGET).c 2>/dev/null; \
-	fi
-	@echo ""
-	@echo "Detailed line coverage saved to: touch-timeout.c.gcov"
+	@echo "========================================="
+	@echo "All tests passed!"
+	@echo "========================================="
 
-# Generate HTML coverage report (requires lcov)
-html-coverage: coverage
+# Generate coverage report (requires lcov)
+coverage: test
+	@echo ""
+	@echo "========================================="
+	@echo "Generating coverage report..."
+	@echo "========================================="
 	@if command -v lcov >/dev/null 2>&1; then \
-		lcov --capture --directory . --output-file coverage.info --ignore-errors source 2>/dev/null; \
-		genhtml coverage.info --output-directory coverage_html 2>/dev/null; \
-		echo "HTML report: coverage_html/index.html"; \
+		mkdir -p coverage; \
+		lcov --capture --directory . --output-file coverage/coverage.info 2>/dev/null || true; \
+		lcov --remove coverage/coverage.info '/usr/*' --output-file coverage/coverage.info 2>/dev/null || true; \
+		genhtml coverage/coverage.info --output-directory coverage 2>/dev/null || true; \
+		echo "Coverage report: coverage/index.html"; \
 	else \
-		echo "lcov not installed. Install with: brew install lcov"; \
+		echo "lcov not installed. Using gcov for basic coverage:"; \
+		gcov *.gcda 2>/dev/null || true; \
+		echo "Coverage files: *.gcov"; \
 	fi
 
-# Clean all generated files
+# Clean test artifacts
 clean:
-	rm -f $(TARGET)
-	rm -f *.gcno *.gcda *.gcov
-	rm -f coverage.info
-	rm -rf coverage_html
+	rm -f $(TEST_TARGETS)
+	rm -f *.o *.gcda *.gcno *.gcov
+	rm -f $(SRC_DIR)/*.gcda $(SRC_DIR)/*.gcno
+	rm -rf coverage
+	rm -f test_touch_timeout
+	rm -rf test_touch_timeout.dSYM
+
+# Help target
+help:
+	@echo "Touch-timeout test suite"
+	@echo ""
+	@echo "Targets:"
+	@echo "  make          - Build all tests"
+	@echo "  make test     - Run all tests"
+	@echo "  make coverage - Generate coverage report"
+	@echo "  make clean    - Remove build artifacts"
