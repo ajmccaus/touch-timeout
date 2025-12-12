@@ -1,292 +1,90 @@
 #!/bin/bash
 #
-# test-performance.sh - Comprehensive performance testing for touch-timeout daemon
+# test-performance.sh - Collect performance data for touch-timeout daemon
 #
-# Transfer to RPi:
-#   scp scripts/test-performance.sh root@192.168.1.XXX:/tmp/
+# Outputs machine-readable metrics. Redirect to file for comparison.
+# Only requires: ps, awk, ls, sleep, date (standard on minimal Linux)
 #
-# Run on RPi (minimal output - default):
-#   ssh root@192.168.1.XXX "bash /tmp/test-performance.sh"
+# Usage:
+#   scp scripts/test-performance.sh <USER>@<IP>:/run/
+#   ssh <USER>@<IP> "bash /run/test-performance.sh" | tee perf-$(date +%Y%m%d).txt
 #
-# Run with verbose output:
-#   ssh root@192.168.1.XXX "MINIMAL_OUTPUT=0 bash /tmp/test-performance.sh"
-#
-# Run from WSL2 and save results locally:
-#   ssh root@192.168.1.XXX "bash /tmp/test-performance.sh" > ~/projects/touch-timeout/test-results-$(date +%Y%m%d-%H%M%S).txt
-#
-# This script measures:
-# - CPU usage (idle and active)
-# - Memory consumption (RSS, VSZ, leaks)
-# - SD card write activity
-# - File descriptor usage
-# - System call frequency
-# - Response time to input events
+# Optional: specify duration (default 30s)
+#   ssh <USER>@<IP> "bash /run/test-performance.sh 60"
 #
 
 set -e
+DURATION=${1:-30}
 
-# Output mode: Set to 0 for verbose, 1 for minimal (default)
-MINIMAL_OUTPUT="${MINIMAL_OUTPUT:-1}"
-
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
-
-# Test duration parameters
-MONITOR_DURATION=30  # seconds to monitor for baseline
-TOUCH_TEST_DURATION=10  # seconds to simulate touch events
-
-log_info() {
-    [[ $MINIMAL_OUTPUT -eq 1 ]] && return
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-log_success() {
-    echo -e "${GREEN}[PASS]${NC} $1"
-}
-
-log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[FAIL]${NC} $1"
-}
-
-log_minimal() {
-    echo -e "$1"
-}
-
-# Find touch-timeout process
-PID=$(pgrep -x touch-timeout)
-if [ -z "$PID" ]; then
-    log_error "touch-timeout daemon not running"
+# Find daemon PID
+pid=$(pidof touch-timeout 2>/dev/null || ps -e -o pid,comm | awk '/touch-timeout/ {print $1; exit}')
+if [[ -z "$pid" ]]; then
+    echo "ERROR: touch-timeout daemon not running" >&2
     exit 1
 fi
 
-log_info "Found touch-timeout daemon (PID: $PID)"
+# Header
+echo "# touch-timeout performance data"
+echo "# Date: $(date -Iseconds 2>/dev/null || date)"
+echo "# Duration: ${DURATION}s"
+echo "# PID: $pid"
+echo ""
 
-if [[ $MINIMAL_OUTPUT -eq 1 ]]; then
-    log_minimal "Performance test starting (PID: $PID, duration: ${MONITOR_DURATION}s)..."
-fi
-echo
+# Capture start state
+mem_start=$(ps -o rss= -p "$pid" 2>/dev/null | tr -d ' ')
+fd_start=$(ls /proc/$pid/fd 2>/dev/null | wc -l)
+write_start=$(awk '/^write_bytes:/ {print $2; exit}' /proc/$pid/io 2>/dev/null || echo "N/A")
 
-# ====================
-# Test 1: CPU Usage
-# ====================
-if [[ $MINIMAL_OUTPUT -eq 0 ]]; then
-    echo "=========================================="
-    echo "Test 1: CPU Usage"
-    echo "=========================================="
-fi
-
-log_info "Measuring CPU usage over ${MONITOR_DURATION}s..."
-CPU_SAMPLES=()
-for i in $(seq 1 $MONITOR_DURATION); do
-    CPU=$(ps -p $PID -o %cpu= 2>/dev/null || echo "0.0")
-    CPU_SAMPLES+=($CPU)
+# Collect CPU samples (progress dots instead of per-line output)
+echo -n "# Collecting CPU samples (${DURATION}s): "
+cpu_sum=0
+cpu_max=0
+i=1
+while [ $i -le $DURATION ]; do
+    # Verify process still exists (CRITICAL: detect daemon death mid-test)
+    if ! kill -0 "$pid" 2>/dev/null; then
+        echo ""
+        echo "ERROR: Process $pid died during measurement at sample $i" >&2
+        exit 1
+    fi
+    cpu=$(ps -o %cpu= -p "$pid" 2>/dev/null | tr -d ' ')
+    cpu=${cpu:-0.0}
+    echo -n "."
+    cpu_sum=$(awk "BEGIN {print $cpu_sum + $cpu}")
+    cpu_max=$(awk "BEGIN {print ($cpu > $cpu_max) ? $cpu : $cpu_max}")
     sleep 1
+    i=$((i + 1))
 done
+echo " done"
 
-# Calculate average CPU
-CPU_SUM=0
-for cpu in "${CPU_SAMPLES[@]}"; do
-    CPU_SUM=$(echo "$CPU_SUM + $cpu" | bc)
-done
-CPU_AVG=$(echo "scale=2; $CPU_SUM / ${#CPU_SAMPLES[@]}" | bc)
+# Capture end state
+mem_end=$(ps -o rss= -p "$pid" 2>/dev/null | tr -d ' ')
+fd_end=$(ls /proc/$pid/fd 2>/dev/null | wc -l)
+write_end=$(awk '/^write_bytes:/ {print $2; exit}' /proc/$pid/io 2>/dev/null || echo "N/A")
 
-log_info "Average CPU usage: ${CPU_AVG}%"
-if (( $(echo "$CPU_AVG < 1.0" | bc -l) )); then
-    log_success "CPU usage is excellent (<1%)"
-elif (( $(echo "$CPU_AVG < 5.0" | bc -l) )); then
-    log_warn "CPU usage is acceptable but higher than expected (1-5%)"
-else
-    log_error "CPU usage is high (>5%) - investigate"
-fi
-echo
+# Calculate metrics (strip non-digits for safety - handles unexpected ps output)
+mem_start_safe=${mem_start//[^0-9]/}; mem_start_safe=${mem_start_safe:-0}
+mem_end_safe=${mem_end//[^0-9]/}; mem_end_safe=${mem_end_safe:-0}
+cpu_avg=$(awk "BEGIN {printf \"%.3f\", $cpu_sum / $DURATION}")
+cpu_max=$(awk "BEGIN {printf \"%.1f\", $cpu_max}")
+mem_mb=$(awk "BEGIN {printf \"%.2f\", $mem_end_safe / 1024}")
 
-# ====================
-# Test 2: Memory Usage
-# ====================
-if [[ $MINIMAL_OUTPUT -eq 0 ]]; then
-    echo "=========================================="
-    echo "Test 2: Memory Usage"
-    echo "=========================================="
-fi
-
-MEM_START=$(ps -p $PID -o rss= | tr -d ' ')
-log_info "Initial memory (RSS): $((MEM_START / 1024)) MB"
-
-# Monitor for memory leaks
-log_info "Monitoring memory for ${MONITOR_DURATION}s to detect leaks..."
-sleep $MONITOR_DURATION
-
-MEM_END=$(ps -p $PID -o rss= | tr -d ' ')
-log_info "Final memory (RSS): $((MEM_END / 1024)) MB"
-
-MEM_GROWTH=$((MEM_END - MEM_START))
-if [ $MEM_GROWTH -lt 100 ]; then
-    log_success "No memory leak detected (growth: ${MEM_GROWTH}KB)"
-elif [ $MEM_GROWTH -lt 1024 ]; then
-    log_warn "Minor memory growth detected (${MEM_GROWTH}KB) - monitor over time"
-else
-    log_error "Significant memory growth detected ($((MEM_GROWTH / 1024))MB) - possible leak"
-fi
-echo
-
-# ====================
-# Test 3: SD Card Writes
-# ====================
-if [[ $MINIMAL_OUTPUT -eq 0 ]]; then
-    echo "=========================================="
-    echo "Test 3: SD Card Write Activity"
-    echo "=========================================="
-fi
-
-if [ -f /proc/$PID/io ]; then
-    WRITE_START=$(grep write_bytes /proc/$PID/io | awk '{print $2}')
-    log_info "Initial write bytes: $WRITE_START"
-
-    log_info "Monitoring write activity for ${MONITOR_DURATION}s..."
-    sleep $MONITOR_DURATION
-
-    WRITE_END=$(grep write_bytes /proc/$PID/io | awk '{print $2}')
-    log_info "Final write bytes: $WRITE_END"
-
-    WRITE_DELTA=$((WRITE_END - WRITE_START))
-    WRITE_RATE=$(echo "scale=2; $WRITE_DELTA / $MONITOR_DURATION" | bc)
-
-    log_info "Write activity: ${WRITE_DELTA} bytes over ${MONITOR_DURATION}s (${WRITE_RATE} bytes/sec)"
-
-    if [ $WRITE_DELTA -eq 0 ]; then
-        log_success "Zero SD card writes - excellent!"
-    elif [ $WRITE_DELTA -lt 4096 ]; then
-        log_success "Minimal SD card writes (<4KB)"
-    elif [ $WRITE_DELTA -lt 102400 ]; then
-        log_warn "Some SD card writes detected (${WRITE_DELTA} bytes)"
-    else
-        log_error "Excessive SD card writes (${WRITE_DELTA} bytes) - investigate logging"
-    fi
-else
-    log_warn "/proc/$PID/io not available - cannot measure write activity"
-fi
-echo
-
-# ====================
-# Test 4: File Descriptors
-# ====================
-if [[ $MINIMAL_OUTPUT -eq 0 ]]; then
-    echo "=========================================="
-    echo "Test 4: File Descriptor Usage"
-    echo "=========================================="
-fi
-
-FD_START=$(ls /proc/$PID/fd 2>/dev/null | wc -l)
-log_info "Initial file descriptors: $FD_START"
-
-log_info "Monitoring FD usage for ${MONITOR_DURATION}s..."
-sleep $MONITOR_DURATION
-
-FD_END=$(ls /proc/$PID/fd 2>/dev/null | wc -l)
-log_info "Final file descriptors: $FD_END"
-
-FD_DELTA=$((FD_END - FD_START))
-if [ $FD_DELTA -eq 0 ]; then
-    log_success "File descriptor count stable (no leaks)"
-elif [ $FD_DELTA -lt 5 ]; then
-    log_warn "Minor FD count change (+${FD_DELTA}) - acceptable"
-else
-    log_error "File descriptor leak detected (+${FD_DELTA} FDs)"
-fi
-
-log_info "Open file descriptors:"
-ls -l /proc/$PID/fd 2>/dev/null | grep -v "total" | head -10
-echo
-
-# ====================
-# Test 5: System Calls
-# ====================
-if [[ $MINIMAL_OUTPUT -eq 0 ]]; then
-    echo "=========================================="
-    echo "Test 5: System Call Frequency"
-    echo "=========================================="
-fi
-
-if command -v strace >/dev/null 2>&1; then
-    log_info "Tracing system calls for 5 seconds..."
-    SYSCALL_COUNT=$(timeout 5 strace -c -p $PID 2>&1 | grep "calls" | awk '{print $1}' | head -1)
-
-    if [ -n "$SYSCALL_COUNT" ] && [ "$SYSCALL_COUNT" -gt 0 ]; then
-        SYSCALL_RATE=$(echo "scale=2; $SYSCALL_COUNT / 5" | bc)
-        log_info "System call rate: ${SYSCALL_RATE} calls/sec"
-
-        # Show top syscalls
-        log_info "Top system calls:"
-        timeout 5 strace -c -p $PID 2>&1 | grep -E "^\s*[0-9]" | head -5
-    else
-        log_warn "Could not measure system calls (strace may require root)"
-    fi
-else
-    log_warn "strace not available - skipping syscall analysis"
-fi
-echo
-
-# ====================
-# Test 6: Process Info
-# ====================
-if [[ $MINIMAL_OUTPUT -eq 0 ]]; then
-    echo "=========================================="
-    echo "Test 6: Process Summary"
-    echo "=========================================="
-fi
-
-log_info "Current process state:"
-ps aux | head -1
-ps aux | grep -E "^USER|[t]ouch-timeout"
-echo
-
-log_info "Resource limits:"
-cat /proc/$PID/limits 2>/dev/null | grep -E "open files|virtual memory|cpu time" || log_warn "Cannot read limits"
-echo
-
-# ====================
 # Summary
-# ====================
-echo "=========================================="
-echo "Performance Test Summary"
-echo "=========================================="
-echo "Duration: ${MONITOR_DURATION}s baseline monitoring"
-echo "PID: $PID"
 echo ""
-echo "Results:"
-echo "  - CPU (avg): ${CPU_AVG}%"
-echo "  - Memory: $((MEM_START / 1024)) MB → $((MEM_END / 1024)) MB (Δ ${MEM_GROWTH}KB)"
-echo "  - SD writes: ${WRITE_DELTA:-N/A} bytes"
-echo "  - File descriptors: $FD_START → $FD_END (Δ ${FD_DELTA})"
-echo ""
-
-# Overall verdict
-FAILED=0
-if (( $(echo "$CPU_AVG >= 5.0" | bc -l) )); then
-    FAILED=$((FAILED + 1))
-fi
-if [ $MEM_GROWTH -gt 1024 ]; then
-    FAILED=$((FAILED + 1))
-fi
-if [ ${WRITE_DELTA:-0} -gt 102400 ]; then
-    FAILED=$((FAILED + 1))
-fi
-if [ $FD_DELTA -gt 5 ]; then
-    FAILED=$((FAILED + 1))
-fi
-
-if [ $FAILED -eq 0 ]; then
-    log_success "All performance tests passed!"
-    exit 0
+echo "# Summary"
+echo "CPU_AVG_PCT=$cpu_avg"
+echo "CPU_MAX_PCT=$cpu_max"
+echo "MEM_START_KB=$mem_start_safe"
+echo "MEM_END_KB=$mem_end_safe"
+echo "MEM_END_MB=$mem_mb"
+echo "MEM_GROWTH_KB=$((mem_end_safe - mem_start_safe))"
+echo "FD_START=$fd_start"
+echo "FD_END=$fd_end"
+echo "FD_DELTA=$((fd_end - fd_start))"
+if [[ "$write_start" != "N/A" && "$write_end" != "N/A" ]]; then
+    echo "SD_WRITE_BYTES=$((write_end - write_start))"
 else
-    log_error "$FAILED test(s) failed - review results above"
-    exit 1
+    echo "SD_WRITE_BYTES=N/A"
 fi
+echo ""
+echo "# Compare to README claims: CPU <0.05%, Memory ~0.2MB, SD writes ~0"
