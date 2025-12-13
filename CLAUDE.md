@@ -31,6 +31,32 @@ gcc -std=c17 -D_POSIX_C_SOURCE=200809L ...
 - Provides stability without requiring cutting-edge features
 - Backward compatible with C11 code
 
+### Naming Conventions
+
+**Functions:**
+- Public: `module_verb()` or `module_verb_noun()` - e.g., `state_init()`, `config_load()`
+- Static: Same pattern as public for consistency - e.g., `config_trim()`, `config_find_param()`
+- main.c helpers are exceptions (not a reusable module)
+
+**Types:**
+- Struct typedefs: `module_s` suffix - e.g., `state_s`, `config_s`
+- Enum typedefs: `module_e` suffix - e.g., `state_type_e`, `state_event_e`
+- Avoids POSIX `_t` suffix conflicts
+
+**HAL Module Pattern:**
+- `module_open()` / `module_close()` - create/destroy with fd
+- `module_get_fd()` - return fd for poll()
+- Consistent across display, input, timer modules
+
+**Variables:**
+- Globals: `g_` prefix - e.g., `g_running`, `g_config`
+- Constants/macros: `MODULE_UPPER_CASE` - e.g., `CONFIG_DEFAULT_BRIGHTNESS`
+- Locals: `snake_case`
+
+**Parameters:**
+- Handle/context first: `module_func(handle, ...)`
+- Output parameters last: `module_func(handle, input, *output)`
+
 ### Security Standards Compliance
 
 This project implements best practices from multiple security standards:
@@ -184,7 +210,7 @@ Transitions triggered by:
 
 ## Configuration
 
-Default config: `/etc/touch-timeout.conf` (see `config/touch-timeout.conf` for example)
+Default config: `/etc/touch-timeout.conf` (see [INSTALLATION.md - Configuration](INSTALLATION.md#configuration) for example)
 
 **Configuration parameters:** See [README.md - Configuration](README.md#configuration) for complete parameter reference.
 
@@ -349,8 +375,7 @@ systemctl status touch-timeout.service
 ## Future Roadmap (v2.1+)
 
 See [ROADMAP.md](ROADMAP.md) for planned features:
-- **v2.1.0**: Debugging modes (-f, -d flags), device disconnection handling
-- **v2.2.0**: Multi-device input, USB hotplug
+- **v2.1.0**: Foreground mode (-f), debug mode (-d), programmatic wake (SIGUSR1)
 
 ## Compiler & Flags
 

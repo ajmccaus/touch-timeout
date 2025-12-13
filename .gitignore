@@ -28,6 +28,7 @@ coverage/
 .claude/
 CLAUDE.*
 V2_RELEASE_PLAN.md
+docs/
 *.local.*
 *.swp
 *.swo

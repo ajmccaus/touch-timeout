@@ -1,95 +1,67 @@
 # touch-timeout Roadmap
 
-Planned features for touch-timeout v2.x releases.
+Planned features for future releases.
 
 **Current Release:** v2.0.0 (2025-12-11)
 
 ---
 
-## Guiding Principles
+## Scope
 
-1. **User experience first** - Features must solve real problems
-2. **Zero-config by default** - Works out of the box, customization optional
-3. **Simplicity** - Minimum complexity for maximum value
-4. **SD card longevity** - Minimize writes
-5. **Testability** - New features require automated tests
+This daemon manages **touchscreen timeout only**. Keyboards, mice, and other input devices are out of scope (use DPMS/xscreensaver for those).
+
+Features are evaluated against the [Design Philosophy](ARCHITECTURE.md#design-philosophy).
 
 ---
 
-## v2.1.0 - Debugging & Robustness
-
-**Goal:** Easier debugging and better error recovery.
+## v2.1.0 - Developer Experience & Integration
 
 **Foreground mode (`-f` flag):**
-- Run daemon in foreground with stderr output (no daemonization)
-- Useful for debugging on device: `sudo /usr/bin/touch-timeout -f`
-- All log messages visible (bypasses systemd LogLevelMax)
+- Run daemon in foreground with stderr output
+- Essential for development and troubleshooting: `sudo ./touch-timeout -f`
+
+**Programmatic wake (SIGUSR1):**
+- `pkill -USR1 touch-timeout` triggers same behavior as touch
+- Enables integration with music players, kiosks, etc.
+- Use case: Wake screen when playback starts (via shairport hooks, audiocontrol, etc.)
 
 **Debug mode (`-d` flag):**
 - Enable LOG_DEBUG messages at runtime
 - Combine with `-f` for full visibility: `touch-timeout -df`
 
 **Device disconnection handling:**
-- Graceful handling when input device disappears (USB unplug)
-- Auto-recovery when device reappears
-- Log warning instead of crash
+- Graceful exit on input device error (POLLERR/POLLHUP/POLLNVAL)
+- Systemd restarts daemon automatically
+- Prevents CPU spin-loop if USB touchscreen disconnected
 
-**Codebase review:**
-- Review against MVP/Lean principles for over-engineering
-- Identify simplification opportunities
-
----
-
-## v2.2.0 - Multi-Device Input
-
-**Goal:** Support multiple input devices.
-
-**Multi-device configuration:**
-```ini
-device=event0,event1    # Explicit list
-device=auto             # Auto-detect (future)
-```
-
-**USB hotplug monitoring:**
-- `inotify` watch on `/dev/input/`
-- Add/remove devices dynamically
-- Limit: 10 devices maximum
+**CLI redesign (getopt):**
+- Positional args replaced with flags: `-b`, `-t`, `-B`, `-D`
+- Enables `-f` and `-d` flags
+- Breaking change: old syntax rejected with helpful error
 
 ---
 
-## v2.3.0+ - Future Possibilities
+## Deferred
 
-Ideas under consideration (no commitment):
+Reconsidered if user demand emerges:
 
-- **Input device classification** - Auto-detect touchscreen vs keyboard vs mouse
-- **Activity sources** - Prevent timeout during audio playback or SSH sessions
-- **Adaptive brightness** - Ambient light sensor integration
-- **Web API** - REST interface for remote control
-
-These require careful evaluation against complexity cost.
+- **Multi-device input** - Out of scope (touchscreen-only daemon)
 
 ---
 
-## Deferred / Rejected
+## Rejected
 
-**Code-level log_level configuration:**
-- Originally planned for v2.1.0
-- Deferred: v2.0.0's `LOG_DEBUG` + systemd `LogLevelMax=info` achieves the goal
-- May revisit if users need fine-grained control without systemd
+- **Audio/activity monitoring** - Use SIGUSR1 instead; simpler, no dependencies
+- **Input device classification** - Scope creep
+- **Adaptive brightness** - Different concern
+- **Web API** - Over-engineered
 
 ---
 
 ## Contributing
 
-Bug reports and feature requests: [GitHub Issues](https://github.com/...)
+Before proposing features, consider:
+- Does this solve a real problem for touchscreen users?
+- Can it be done with SIGUSR1 or existing configuration?
 
-Before proposing new features, consider:
-- Does this solve a real problem users have?
-- Can it be done with existing configuration?
-- Is the complexity justified?
-
----
-
-## Version History
-
-See [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
+See [CHANGELOG.md](CHANGELOG.md) for release history.

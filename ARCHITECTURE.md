@@ -396,10 +396,11 @@ void input_close(input_t *input);
 
 **timer.h - POSIX Timer Wrapper:**
 ```c
-timer_t *timer_create(int fd_to_track);
-int timer_arm(timer_t *timer, int milliseconds);
-void timer_disarm(timer_t *timer);
-void timer_close(timer_t *timer);
+timer_ctx_s *timer_create_ctx(void);
+int timer_arm(timer_ctx_s *timer, int seconds);
+bool timer_check_expiration(timer_ctx_s *timer);
+void timer_destroy(timer_ctx_s *timer);
+int timer_get_fd(timer_ctx_s *timer);
 ```
 
 **Usage Example:**

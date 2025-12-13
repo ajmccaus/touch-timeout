@@ -81,7 +81,7 @@ Tested over 24+ hours continuous operation with no performance degradation.
 
 ## Future Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for planned v2.1+ features (debugging modes, multi-device input, USB hotplug).
+See [ROADMAP.md](ROADMAP.md) for planned features.
 
 ## Support Policy
 This is a learning project maintained in my spare time.
