@@ -301,6 +301,12 @@ state_handle_touch(state);
 assert(state_get_brightness(state) == 100);  // FULL state
 ```
 
+### Script Organization
+
+Test scripts (`test-*.sh`) live in `scripts/` not `tests/`:
+- `tests/` = C unit test source files (compiled executables)
+- `scripts/` = Shell scripts (deployment, testing, automation)
+
 ## Systemd Integration
 
 Service file: `systemd/touch-timeout.service`

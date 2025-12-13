@@ -195,7 +195,7 @@ static const config_param_t config_params[] = {
 
 **After (v2.0.0):**
 - Modular tests: separate executables per module
-- 54 tests across 2 modules (33 config + 21 state)
+- 65 tests across 2 modules (44 config + 21 state)
 - Pure logic testing without hardware
 - Mock headers for cross-platform development
 - Performance testing script for on-device validation
