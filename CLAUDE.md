@@ -8,11 +8,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Current Version:** v2.0.0 (released 2025-12-11)
 
-Modular architecture with event-driven I/O, comprehensive testing, and CERT C security compliance. See [CHANGELOG.md](CHANGELOG.md) for release notes and [ROADMAP.md](ROADMAP.md) for future plans.
+Modular architecture with event-driven I/O, comprehensive testing, and CERT C security compliance. See [CHANGELOG.md](CHANGELOG.md) for release notes and [ROADMAP.md](doc/ROADMAP.md) for future plans.
 
 ## Design Principle
 
-See [ARCHITECTURE.md - Design Philosophy](ARCHITECTURE.md#design-philosophy) for project design principles.
+See [ARCHITECTURE.md - Design Philosophy](doc/ARCHITECTURE.md#design-philosophy) for project design principles.
 
 ## Coding Standards and Best Practices
 
@@ -84,51 +84,15 @@ This project implements best practices from multiple security standards:
 - No use of implicit type conversions
 
 
-## Build Commands
+## Build & Testing
 
-```bash
-# Native build (x86_64)
-make              # Build daemon → build/native/touch-timeout
-make test         # Run all unit tests (config + state modules)
-make coverage     # Generate lcov coverage report
-make clean        # Remove build artifacts
+See [README.md](README.md) for complete build instructions and [ARCHITECTURE.md - Testing](doc/ARCHITECTURE.md#7-testing-infrastructure) for test infrastructure details.
 
-# Cross-compilation (ARM)
-make arm32        # Build for ARMv7 → build/arm32/touch-timeout
-make arm64        # Build for ARM64 (RPi4) → build/arm64/touch-timeout
-make clean-all    # Remove all build artifacts
-
-# Deployment
-make install      # Install to system (requires sudo)
-```
-
-## Testing
-
-```bash
-# Run all tests
-make test
-
-# Run specific test executable
-./tests/test_state      # State machine tests
-./tests/test_config     # Configuration tests
-
-# Generate coverage report
-make coverage
-# View: lcov -l coverage.info | head -30
-```
-
-## Rapid Development Workflow
-
-```bash
-# Quick build + test cycle
-make clean && make test
-
-# Single test module
-./tests/test_config 2>&1 | grep -A5 "FAIL"
-
-# Coverage check for specific file
-gcov src/state.c
-```
+**Quick reference:**
+- `make` - Build native binary
+- `make test` - Run all unit tests
+- `make arm64` - Cross-compile for RPi4
+- `make coverage` - Generate coverage report
 
 ## Testing Strategy
 
@@ -153,11 +117,11 @@ gcov src/state.c
 
 ## SD Card Write Optimization
 
-See [ARCHITECTURE.md - SD Card Write Optimization](ARCHITECTURE.md#8-sd-card-write-optimization) for the three-layer optimization strategy (deployment, logging, runtime) and performance metrics.
+See [ARCHITECTURE.md - SD Card Write Optimization](doc/ARCHITECTURE.md#8-sd-card-write-optimization) for the three-layer optimization strategy (deployment, logging, runtime) and performance metrics.
 
 ## SSH Key Setup for Remote Deployment
 
-See [INSTALLATION.md - SSH Key Setup](INSTALLATION.md#ssh-key-setup-optional-but-recommended) for comprehensive SSH key configuration instructions.
+See [INSTALLATION.md - SSH Key Setup](doc/INSTALLATION.md#ssh-key-setup-optional-but-recommended) for comprehensive SSH key configuration instructions.
 
 Quick reference:
 ```bash
@@ -210,13 +174,13 @@ Transitions triggered by:
 
 ## Configuration
 
-Default config: `/etc/touch-timeout.conf` (see [INSTALLATION.md - Configuration](INSTALLATION.md#configuration) for example)
+Default config: `/etc/touch-timeout.conf` (see [INSTALLATION.md - Configuration](doc/INSTALLATION.md#configuration) for example)
 
 **Configuration parameters:** See [README.md - Configuration](README.md#configuration) for complete parameter reference.
 
 ## Testing Infrastructure
 
-See [ARCHITECTURE.md - Testing Infrastructure](ARCHITECTURE.md#7-testing-infrastructure) for test coverage details and categories.
+See [ARCHITECTURE.md - Testing Infrastructure](doc/ARCHITECTURE.md#7-testing-infrastructure) for test coverage details and categories.
 
 ## Security & Compliance
 
@@ -248,13 +212,13 @@ make arm64  # → build/arm64/touch-timeout
 
 ### Deployment to RPi4 over TCP-IP
 
-See [INSTALLATION.md - Method 2](INSTALLATION.md#method-2-remote-deployment-cross-compilation) for comprehensive deployment guide including SSH setup, troubleshooting, and CI/CD automation.
+See [INSTALLATION.md - Method 2](doc/INSTALLATION.md#method-2-remote-deployment-cross-compilation) for comprehensive deployment guide including SSH setup, troubleshooting, and CI/CD automation.
 
 ## Code Organization
 
 ### Module Structure
 
-See [ARCHITECTURE.md - Module Interfaces](ARCHITECTURE.md#module-interfaces) for complete API documentation and usage examples.
+See [ARCHITECTURE.md - Module Interfaces](doc/ARCHITECTURE.md#module-interfaces) for complete API documentation and usage examples.
 
 **Six independent modules:**
 - **state.c/h** - Pure state machine (FULL → DIMMED → OFF), zero I/O dependencies
@@ -322,9 +286,11 @@ Keep state.c pure (no I/O). All device operations go in main.c through HAL modul
 
 State machine tests can use pure C without hardware:
 ```c
-state_t *state = state_create(300, 150);  // 300s timeout, 150s dim
-state_handle_touch(state);
-assert(state_get_brightness(state) == 100);  // FULL state
+state_t state;
+state_init(&state, 150, 15, 270, 300);  // user_brightness, dim_brightness, dim_timeout, off_timeout
+int brightness;
+state_handle_event(&state, STATE_EVENT_TOUCH, &brightness);
+assert(state_get_brightness(&state) == 150);  // FULL state
 ```
 
 ### Script Organization
@@ -374,7 +340,7 @@ systemctl status touch-timeout.service
 
 ## Future Roadmap (v2.1+)
 
-See [ROADMAP.md](ROADMAP.md) for planned features:
+See [ROADMAP.md](doc/ROADMAP.md) for planned features:
 - **v2.1.0**: Foreground mode (-f), debug mode (-d), programmatic wake (SIGUSR1)
 
 ## Compiler & Flags

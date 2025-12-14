@@ -27,8 +27,7 @@ coverage/
 .claude/settings.local.json
 .claude/
 CLAUDE.*
-V2_RELEASE_PLAN.md
-docs/
+PLAN-*
 *.local.*
 *.swp
 *.swo

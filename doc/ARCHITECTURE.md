@@ -1,3 +1,10 @@
+---
+status: approved
+approved_date: 2025-12-14
+version: "2.0"
+author: Andrew McCausland
+---
+
 # Touch-Timeout v2.0 Architecture
 
 ## Overview
@@ -35,17 +42,6 @@ This philosophy drives specific design choices:
 systemctl start touch-timeout    # Start service
 systemctl status touch-timeout   # Check status
 journalctl -u touch-timeout -f   # View logs
-```
-
-**Performance Testing:**
-```bash
-# Transfer test script
-scp scripts/test-performance.sh root@192.168.1.XXX:/tmp/
-
-# Run performance test (minimal output)
-ssh root@192.168.1.XXX "bash /tmp/test-performance.sh"
-
-# Results: CPU usage, memory, SD writes, file descriptors
 ```
 
 ## Key Improvements
@@ -334,111 +330,135 @@ This enables:
 
 ### Hardware Abstraction
 
-**Display Module Interface:**
-```c
-display_t *display_open(const char *backlight_name);
-int display_set_brightness(display_t *display, int brightness);
-int display_get_brightness(display_t *display);
-void display_close(display_t *display);
-```
+HAL modules isolate platform-specific APIs behind stable contracts.
 
-**Input Module Interface:**
-```c
-input_t *input_open(const char *device_name);
-int input_get_fd(input_t *input);
-bool input_has_touch_event(input_t *input);
-void input_close(input_t *input);
-```
+**Display Module Contract:**
+- MUST provide open/close lifecycle with backlight device name
+- MUST cache current brightness to avoid redundant writes
+- MUST return error codes (not exceptions) for all operations
+- MUST validate brightness range before hardware write
+- Brightness range: 0-255 (clamped to device max_brightness)
 
-Benefits:
-- Mock implementations for testing
-- Platform-specific backends
-- Runtime device selection
-- Clear ownership model
+**Input Module Contract:**
+- MUST provide pollable file descriptor for event loop integration
+- MUST drain all pending events on read (non-blocking)
+- MUST distinguish touch events from other input types
+- File descriptor ownership: module owns fd, caller must not close
+
+**Timer Module Contract:**
+- MUST use monotonic clock (immune to system time changes)
+- MUST provide pollable file descriptor
+- MUST support rearming without recreating
+- Timer precision: second-level (not sub-second)
+
+**HAL Benefits:**
+- Mock implementations enable hardware-free testing
+- Platform-specific backends (Linux sysfs, future: DRM)
+- Runtime device selection via configuration
+- Clear ownership model (opener closes)
 
 ### Module Interfaces
 
-This section documents the public API for each module. See source headers (`.h` files) for complete documentation.
+Interface contracts for each module. See source headers (`.h` files) for implementation details.
 
-**state.h - Pure State Machine:**
-```c
-int state_init(state_t *state, int user_brightness, int dim_brightness,
-               int dim_timeout_sec, int off_timeout_sec);
-bool state_handle_event(state_t *state, state_event_t event, int *new_brightness);
-state_type_t state_get_current(const state_t *state);
-int state_get_brightness(const state_t *state);
-int state_get_next_timeout(const state_t *state);
+**State Machine Module:**
+
+Responsibilities:
+- Track current state (FULL, DIMMED, OFF)
+- Calculate state transitions based on events
+- Determine appropriate brightness for each state
+- Calculate next timeout duration
+
+Inputs:
+- User brightness (15-255)
+- Dim brightness (calculated: user_brightness / 10, min 10)
+- Dim timeout (seconds, calculated from off_timeout * dim_percent)
+- Off timeout (seconds, minimum 10)
+
+Events: TOUCH, DIM_TIMEOUT, OFF_TIMEOUT
+
+State Transition Logic:
+```
+TOUCH from any state:
+  → Transition to FULL
+  → Output: user_brightness
+  → Next timeout: dim_timeout
+
+DIM_TIMEOUT from FULL:
+  → Transition to DIMMED
+  → Output: dim_brightness
+  → Next timeout: off_timeout - dim_timeout
+
+OFF_TIMEOUT from DIMMED:
+  → Transition to OFF
+  → Output: 0 (display off)
+  → Next timeout: none (wait for touch)
+
+Events in wrong state: No transition, no output change
 ```
 
-**config.h - Configuration Management:**
-```c
-config_t *config_init(void);
-int config_load(config_t *config, const char *path);
-int config_validate(config_t *config, int max_brightness);
-int config_safe_atoi(const char *str, int *result);
+Invariants:
+- State machine has zero I/O (pure logic)
+- Brightness only changes on state transition
+- OFF state only reachable from DIMMED (never directly from FULL)
+
+**Configuration Module:**
+
+Responsibilities:
+- Parse key=value configuration file
+- Validate parameter ranges
+- Provide safe defaults for missing/invalid values
+
+Behavior:
+- Missing file: Use all defaults (not an error)
+- Invalid value: Log warning, use default for that parameter
+- Out-of-range: Clamp to valid range, log warning
+- Unknown key: Ignore (forward compatibility)
+
+**HAL Modules (Display, Input, Timer):**
+
+See "Hardware Abstraction" section above for contracts.
+
+**Module Orchestration:**
+
+See [main.c](src/main.c) for implementation.
+
+HAL (Hardware Abstraction Layer) modules isolate Linux-specific interfaces (sysfs, /dev/input, timerfd) so the state machine remains pure and testable.
+
+```
+                     ┌─────────────┐
+                     │   poll()    │
+                     │  (blocks)   │
+                     └──────┬──────┘
+                            │
+               ┌────────────┴────────────┐
+               ▼                         ▼
+        ┌─────────────┐           ┌─────────────┐
+        │  Input HAL  │           │  Timer HAL  │
+        │(/dev/input) │           │  (timerfd)  │
+        └──────┬──────┘           └──────┬──────┘
+               │                         │
+               └────────────┬────────────┘
+                            ▼
+                     ┌─────────────┐
+                     │    State    │
+                     │   Machine   │
+                     │(pure logic) │
+                     └──────┬──────┘
+                            │ new_brightness
+                            ▼
+                     ┌─────────────┐
+                     │ Display HAL │
+                     │   (sysfs)   │
+                     └─────────────┘
 ```
 
-**display.h - Backlight HAL:**
-```c
-display_t *display_open(const char *backlight_name);
-int display_set_brightness(display_t *display, int brightness);
-int display_get_brightness(display_t *display);
-void display_close(display_t *display);
-```
+**Event loop pattern:**
 
-**input.h - Touch Input HAL:**
-```c
-input_t *input_open(const char *device_name);
-int input_get_fd(input_t *input);
-bool input_has_touch_event(input_t *input);
-void input_close(input_t *input);
-```
-
-**timer.h - POSIX Timer Wrapper:**
-```c
-timer_ctx_s *timer_create_ctx(void);
-int timer_arm(timer_ctx_s *timer, int seconds);
-bool timer_check_expiration(timer_ctx_s *timer);
-void timer_destroy(timer_ctx_s *timer);
-int timer_get_fd(timer_ctx_s *timer);
-```
-
-**Usage Example:**
-```c
-/* Initialize modules */
-config_t *config = config_init();
-config_load(config, "/etc/touch-timeout.conf");
-config_validate(config, 255);
-
-state_t state;
-state_init(&state, config->brightness, config->dim_brightness,
-           config->dim_timeout, config->off_timeout);
-
-display_t *display = display_open(config->backlight);
-input_t *input = input_open(config->device);
-
-/* Event loop */
-struct pollfd fds[2] = {
-    {input_get_fd(input), POLLIN, 0},
-    {timer_get_fd(timer), POLLIN, 0}
-};
-
-while (running) {
-    poll(fds, 2, -1);
-
-    if (fds[0].revents & POLLIN && input_has_touch_event(input)) {
-        int new_brightness;
-        state_handle_event(&state, EVENT_TOUCH, &new_brightness);
-        display_set_brightness(display, new_brightness);
-    }
-
-    if (fds[1].revents & POLLIN) {
-        int new_brightness;
-        state_handle_event(&state, EVENT_TIMEOUT, &new_brightness);
-        display_set_brightness(display, new_brightness);
-    }
-}
-```
+1. **Initialize**: config → state → HALs (display, input, timer)
+2. **Poll**: Block on input_fd and timer_fd until event
+3. **On touch**: state_handle_event(TOUCH) → display_set_brightness() → rearm timer
+4. **On timeout**: state_handle_event(TIMEOUT) → display_set_brightness() → rearm timer
 
 ## Performance Metrics
 
