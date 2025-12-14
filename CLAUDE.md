@@ -57,31 +57,15 @@ gcc -std=c17 -D_POSIX_C_SOURCE=200809L ...
 - Handle/context first: `module_func(handle, ...)`
 - Output parameters last: `module_func(handle, input, *output)`
 
-### Security Standards Compliance
+### Security Standards
 
-This project implements best practices from multiple security standards:
-
-**CERT C Coding Standard** (SEI Carnegie Mellon)
-- **SIG31-C**: Signal handlers use `volatile sig_atomic_t` (✓ implemented)
-- **INT32-C**: Integer overflow protection in timeout arithmetic (✓ implemented)
-- **FIO32-C**: Path traversal protection for device/backlight paths (✓ implemented)
-- **ERR06-C**: Graceful error handling instead of assertions in production paths (✓ implemented)
-
-**POSIX Compliance**
-- Signal handlers follow async-signal-safety rules (only set flags, no complex operations)
-- systemd-compatible daemon initialization (no double-fork, SIGTERM handling)
-- `sigaction()` used instead of deprecated `signal()`
-
-**CWE/OWASP Embedded Security**
-- Buffer overflow prevention via bounds checking
-- Path validation (no directory traversal)
-- Safe string handling
-
-**MISRA C (Optional)**
-- Code follows many MISRA C:2012 guidelines (safety-critical systems subset)
-- No dynamic memory allocation (malloc/free) - uses static allocation
+Follow CERT C, POSIX, and MISRA C guidelines. When writing/modifying code:
+- INT32-C: Overflow protection in timeout calculations
+- FIO32-C: Validate all filesystem paths
+- ERR06-C: Graceful error handling (no assertions in production)
+- Signal handlers: async-signal-safe only (set flags, no I/O)
+- No dynamic allocation
 - Explicit error checking on all system calls
-- No use of implicit type conversions
 
 
 ## Build & Testing
@@ -132,45 +116,15 @@ ssh <USER>@<IP_ADDRESS> "echo OK"  # Verify passwordless login
 
 ## Architecture
 
-### Modular Design (6 Independent Modules)
+See [ARCHITECTURE.md](doc/ARCHITECTURE.md) for complete design documentation.
 
-```
-src/
-├── main.c         - Event loop orchestrator (poll-based)
-├── state.c/h      - Pure state machine (FULL → DIMMED → OFF)
-├── config.c/h     - Table-driven config parser
-├── display.c/h    - Backlight hardware abstraction
-├── input.c/h      - Touch input device abstraction
-└── timer.c/h      - POSIX timerfd wrapper
-```
+**Key patterns when modifying code:**
+- **Event-Driven I/O**: poll() on input + timer fds, zero CPU while idle
+- **Pure state machine**: state.c has zero I/O dependencies (enables unit testing)
+- **HAL modules**: display/input/timer abstract hardware for portability
+- **Table-Driven Config**: Adding parameter = one table entry + test
 
-### Key Design Patterns
-
-**Event-Driven I/O**: `poll()` waits on two file descriptors (input + timer). When touch is detected or timer expires, the state machine updates, triggering display HAL calls. Zero CPU usage while idle.
-
-**Hardware Abstraction Layers**: Display and input modules isolate Linux-specific APIs (sysfs, `/dev/input`) for portability and testing. Pure state machine has zero I/O dependencies, enabling unit testing without hardware.
-
-**Table-Driven Configuration**: `config.c` uses descriptor tables for all parameter types. Adding a parameter requires one table entry + test.
-
-**Brightness Caching**: `display.c` caches current brightness to skip redundant sysfs writes (~90% write reduction vs v1.x).
-
-### Data Flow
-
-```
-Input Event → Input HAL → State Machine → Display HAL → /sys/class/backlight/
-Timer Expiry → Timer HAL → State Machine → Display HAL → /sys/class/backlight/
-```
-
-### State Machine States
-
-- **FULL**: Display at configured brightness
-- **DIMMED**: Brightness reduced to `brightness / 10` (min 10)
-- **OFF**: Brightness = 0
-
-Transitions triggered by:
-- Touch input → restore FULL, reset timers
-- Timeout at `dim_percent` of `off_timeout` → transition to DIMMED
-- Timeout at `off_timeout` → transition to OFF
+**State transitions:** FULL → DIMMED (at dim_percent timeout) → OFF (at off_timeout)
 
 ## Configuration
 
@@ -178,57 +132,11 @@ Default config: `/etc/touch-timeout.conf` (see [INSTALLATION.md - Configuration]
 
 **Configuration parameters:** See [README.md - Configuration](README.md#configuration) for complete parameter reference.
 
-## Testing Infrastructure
-
-See [ARCHITECTURE.md - Testing Infrastructure](doc/ARCHITECTURE.md#7-testing-infrastructure) for test coverage details and categories.
-
-## Security & Compliance
-
-**CERT C Compliance:**
-- INT31-C: Range validation on all integer inputs
-- INT32-C: Overflow prevention in calculations
-- FIO32-C: Path traversal protection
-- STR31-C: Buffer overflow prevention
-- ERR06-C: Graceful error handling (no assertions in hot paths)
-
-**Defensive Programming:**
-- All public functions validate parameters
-- No assumptions about device max_brightness
-- Safe string parsing via `safe_atoi()`
-
-## Cross-Compilation
-
-### Prerequisites
-
-```bash
-sudo apt-get install gcc-arm-linux-gnueabihf gcc-aarch64-linux-gnu
-```
-
-### Build for RPi4 (ARM64)
-
-```bash
-make arm64  # → build/arm64/touch-timeout
-```
-
-### Deployment to RPi4 over TCP-IP
-
-See [INSTALLATION.md - Method 2](doc/INSTALLATION.md#method-2-remote-deployment-cross-compilation) for comprehensive deployment guide including SSH setup, troubleshooting, and CI/CD automation.
-
 ## Code Organization
 
-### Module Structure
+See [ARCHITECTURE.md - Module Interfaces](doc/ARCHITECTURE.md#module-interfaces) for complete module documentation.
 
-See [ARCHITECTURE.md - Module Interfaces](doc/ARCHITECTURE.md#module-interfaces) for complete API documentation and usage examples.
-
-**Six independent modules:**
-- **state.c/h** - Pure state machine (FULL → DIMMED → OFF), zero I/O dependencies
-- **config.c/h** - Table-driven configuration with graceful fallback
-- **display.c/h** - Backlight hardware abstraction (sysfs interface)
-- **input.c/h** - Touch input device abstraction (/dev/input)
-- **timer.c/h** - POSIX timerfd wrapper for event-driven timeouts
-- **main.c** - Event loop orchestrator (poll-based)
-
-### Key Files to Read
+**When reading code, start with:**
 
 1. **main.c** - Event loop showing module orchestration
 2. **state.h** - State machine interface
@@ -236,39 +144,16 @@ See [ARCHITECTURE.md - Module Interfaces](doc/ARCHITECTURE.md#module-interfaces)
 4. **tests/test_state.c** - State machine unit tests (reference)
 5. **Makefile** - Build system and cross-compilation targets
 
-## Performance Characteristics
-
-- **CPU (idle)**: <0.05%
-- **Memory (RSS)**: ~0.2 MB
-- **Latency**: <200ms touch-to-restore
-- **SD Card I/O**: ~90% reduction via brightness caching
-
-Benchmarked on RPi4 (1.5GHz ARM Cortex-A72) over 24+ hours continuous operation.
-
 ## Documentation Standards
 
-**User-First Organization**: Structure docs by user journey, not implementation details
-- **INSTALLATION.md**: Two methods (Direct vs Remote), not "for developers" vs "for users"
-- **README.md**: Quick examples with links to comprehensive guides
-- **ARCHITECTURE.md**: Technical details for contributors, not mixed with user docs
+**SSoT (Single Source of Truth) for this project:**
+- **Configuration parameters**: README.md
+- **Installation/deployment**: INSTALLATION.md (in doc/)
+- **Architecture/design**: ARCHITECTURE.md (in doc/)
+- **Build commands**: Makefile
+- **Code defaults**: src/config.h
 
-**Appropriate Detail Level**:
-- Quick start: 5-10 lines showing the most common case
-- Comprehensive: Full options, edge cases, troubleshooting
-- Balance: Don't hide important details, but make common case discoverable in 10 seconds
-
-**Signal-to-Noise**: Every line should add value
-- Skip obvious explanations (e.g., "Install the compiler before compiling")
-- Include non-obvious guidance (e.g., "Why /run vs /tmp", "SSH keys eliminate 3-4 password prompts")
-
-**Single Source of Truth (SSoT)**: This project's canonical locations:
-- **Configuration parameters**: README.md (Configuration section)
-- **Installation procedures**: INSTALLATION.md
-- **Architecture/internals**: ARCHITECTURE.md
-- **Build commands**: CLAUDE.md (Build Commands section)
-- **Defaults and constants**: src/config.h (code is the ultimate SSoT)
-
-When documenting, reference the SSoT instead of duplicating. code-reviewer should flag SSoT violations.
+When documenting, reference the SSoT instead of duplicating.
 
 ## Development Patterns
 
@@ -316,21 +201,6 @@ journalctl -u touch-timeout.service -f
 systemctl status touch-timeout.service
 ```
 
-## Important Constraints
-
-- **Brightness values:** 15-255 acceptable, recommend ≤200 for RPi 7" official touchscreen
-  - Hardware limitation: >200 may cause unexpected PWM behavior (per hardware errata)
-  - Minimum brightness: 15 (avoids flicker)
-  - Minimum dim brightness: 10
-- **Off timeout:** Must be ≥10 seconds (design decision for user experience)
-- **Default dim_percent:** 10 (v2.0.0+), changed from 50 in v1.0.x
-  - Rationale: Keeps display at full brightness longer (90% of timeout vs 50%)
-  - Dim serves as brief warning before screen off
-  - Dims at 10% of off_timeout (e.g., 30s if off_timeout=300s)
-- **Error handling:** Graceful degradation, no fatal exits on config errors (v2.0.0+)
-  - Out-of-range config values → log warning, use defaults
-  - Daemon continues operation even with invalid configuration
-
 ## Known Limitations
 
 - Linux-only (timerfd, sysfs, /dev/input)
@@ -340,16 +210,7 @@ systemctl status touch-timeout.service
 
 ## Future Roadmap (v2.1+)
 
-See [ROADMAP.md](doc/ROADMAP.md) for planned features:
-- **v2.1.0**: Foreground mode (-f), debug mode (-d), programmatic wake (SIGUSR1)
-
-## Compiler & Flags
-
-- **Compiler**: gcc 7+ with C17 support
-- **Standard**: `-std=c17` with `-D_POSIX_C_SOURCE=200809L`
-- **Optimization**: `-O2` for release builds
-- **Warnings**: `-Wall -Wextra -Wno-unused-parameter`
-- **Optional**: `-coverage` for unit test instrumentation
+See [ROADMAP.md](doc/ROADMAP.md) for planned features.
 
 ## References
 

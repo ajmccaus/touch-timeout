@@ -1,7 +1,6 @@
 ---
-status: approved
-approved_date: 2025-12-14
-version: "2.0"
+status: draft
+version: "2.0.1"
 author: Andrew McCausland
 ---
 
@@ -10,6 +9,19 @@ author: Andrew McCausland
 ## Overview
 
 Complete architectural refactoring of the touch-timeout daemon from monolithic (v1.0.0) to modular design (v2.0.0), implementing modern POSIX APIs, enhanced security, and comprehensive testability.
+
+## Design Constraints
+
+| Constraint | Requirement | Rationale |
+|------------|-------------|-----------|
+| CPU (idle) | < 0.1% | Battery/thermal on always-on display |
+| Memory (RSS) | < 5 MB | Embedded system with limited RAM |
+| Touch latency | < 200 ms | User-perceptible responsiveness |
+| SD card writes | < 50/day | Limited write cycles (~10k-100k) |
+| File descriptors | ≤ 4 | input, timer, backlight, signal |
+| Dependencies | libc only | Minimal buildroot compatibility |
+| Clock source | CLOCK_MONOTONIC | Immune to NTP/suspend drift |
+| Graceful shutdown | < 5 seconds | systemd timeout compliance |
 
 ## Design Philosophy
 
@@ -143,17 +155,21 @@ Run daemon manually to see all messages: `sudo /usr/bin/touch-timeout`
 - Easy to add new parameters
 
 **Table-Driven Approach:**
-```c
-static const config_param_t config_params[] = {
-    {
-        .key = "brightness",
-        .type = TYPE_INT,
-        .offset = offsetof(config_t, brightness),
-        .min_value = 0,
-        .max_value = CONFIG_MAX_BRIGHTNESS,
-    },
-    // ... more parameters
-};
+
+```
+Configuration Table Structure:
+  Each parameter descriptor contains:
+    - key: string identifier (e.g., "brightness")
+    - type: data type (integer, string, boolean)
+    - target: field in config structure
+    - constraints: min/max values for validation
+
+  Parameters defined:
+    brightness  : integer, range 0-255
+    timeout     : integer, range 10-3600 seconds
+    dim_percent : integer, range 0-100
+    input_device: string, path to /dev/input/*
+    backlight   : string, path to /sys/class/backlight/*
 ```
 
 **Benefits:**
@@ -290,28 +306,29 @@ Use `scripts/test-performance.sh` on device to measure write activity via `/proc
 ### Event Loop Design
 
 **Before (Poll-based with timeout):**
-```c
-while (running) {
-    poll(&input_fd, 1, poll_interval);  // Wake every 100ms
-    if (input_ready) handle_touch();
-    check_timeouts();  // Manual time() comparison
-}
+
+```
+LOOP while running:
+    wait for input (with 100ms timeout)
+    IF input ready THEN handle touch event
+    check elapsed time manually (compare wall clock)
 ```
 
 **After (Event-driven with timerfd):**
-```c
-while (running) {
-    poll(fds[input, timer], 2, -1);  // Block until event
-    if (input_ready) {
-        handle_touch();
-        rearm_timer();
-    }
-    if (timer_expired) {
-        handle_timeout();
-        rearm_timer();
-    }
-    watchdog_ping();
-}
+
+```
+LOOP while running:
+    wait for events on [input_fd, timer_fd] (block indefinitely)
+
+    IF input event:
+        process touch → update state machine
+        reset timer to next timeout
+
+    IF timer expired:
+        process timeout → update state machine
+        reset timer to next timeout (if not OFF state)
+
+    ping watchdog (if enabled)
 ```
 
 ### State Machine Purity
