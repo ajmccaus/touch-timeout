@@ -12,7 +12,8 @@ Modular architecture with event-driven I/O, comprehensive testing, and CERT C se
 
 ## Design Principle
 
-See [ARCHITECTURE.md - Design Philosophy](doc/ARCHITECTURE.md#design-philosophy) for project design principles.
+See [DESIGN.md](doc/DESIGN.md) for design intent, philosophy, and principles.
+See [ARCHITECTURE.md](doc/ARCHITECTURE.md) for current implementation state.
 
 ## Coding Standards and Best Practices
 
@@ -70,7 +71,7 @@ Follow CERT C, POSIX, and MISRA C guidelines. When writing/modifying code:
 
 ## Build & Testing
 
-See [README.md](README.md) for complete build instructions and [ARCHITECTURE.md - Testing](doc/ARCHITECTURE.md#7-testing-infrastructure) for test infrastructure details.
+See [README.md](README.md) for complete build instructions and [ARCHITECTURE.md - Test Infrastructure](doc/ARCHITECTURE.md#test-infrastructure) for test details.
 
 **Quick reference:**
 - `make` - Build native binary
@@ -101,7 +102,7 @@ See [README.md](README.md) for complete build instructions and [ARCHITECTURE.md 
 
 ## SD Card Write Optimization
 
-See [ARCHITECTURE.md - SD Card Write Optimization](doc/ARCHITECTURE.md#8-sd-card-write-optimization) for the three-layer optimization strategy (deployment, logging, runtime) and performance metrics.
+See [DESIGN.md - SD card write optimization](doc/DESIGN.md#decision-sd-card-write-optimization) for the three-layer strategy.
 
 ## SSH Key Setup for Remote Deployment
 
@@ -114,9 +115,36 @@ ssh <USER>@<IP_ADDRESS> "echo OK"  # Verify passwordless login
 ```
 
 
+## Project Structure
+
+```
+touch-timeout/
+├── README.md           # User entry point, feature overview
+├── CHANGELOG.md        # Release history
+├── CLAUDE.md           # AI instructions (this file)
+├── doc/
+│   ├── DESIGN.md       # Design intent (prescriptive, stable)
+│   ├── ARCHITECTURE.md # Current state (descriptive, per-release)
+│   ├── INSTALLATION.md # User install guide
+│   ├── ROADMAP.md      # Future plans
+│   └── plans/          # Version-specific implementation plans
+│       └── archive/    # Completed plans (record keeping)
+├── src/                # Source code
+├── tests/              # C unit test source files
+├── scripts/            # Shell scripts (deployment, testing)
+└── systemd/            # Service configuration
+```
+
+**Separation of Concerns:**
+- **Root**: Entry points only (README, CHANGELOG, CLAUDE.md)
+- **doc/**: All documentation (user and developer)
+- **DESIGN.md**: How it SHOULD work (prescriptive) - stable across versions
+- **ARCHITECTURE.md**: How it DOES work (descriptive) - updated each release
+- **plans/**: Ephemeral implementation guidance, archived after release
+
 ## Architecture
 
-See [ARCHITECTURE.md](doc/ARCHITECTURE.md) for complete design documentation.
+See [ARCHITECTURE.md](doc/ARCHITECTURE.md) for current implementation and [DESIGN.md](doc/DESIGN.md) for design intent.
 
 **Key patterns when modifying code:**
 - **Event-Driven I/O**: poll() on input + timer fds, zero CPU while idle
@@ -147,13 +175,20 @@ See [ARCHITECTURE.md - Module Interfaces](doc/ARCHITECTURE.md#module-interfaces)
 ## Documentation Standards
 
 **SSoT (Single Source of Truth) for this project:**
+- **Design intent/philosophy**: DESIGN.md (in doc/)
+- **Current implementation**: ARCHITECTURE.md (in doc/)
 - **Configuration parameters**: README.md
 - **Installation/deployment**: INSTALLATION.md (in doc/)
-- **Architecture/design**: ARCHITECTURE.md (in doc/)
+- **Future plans**: ROADMAP.md (in doc/)
 - **Build commands**: Makefile
 - **Code defaults**: src/config.h
 
 When documenting, reference the SSoT instead of duplicating.
+
+**Plan files:**
+- Active plans live in `doc/plans/`
+- Move to `doc/plans/archive/` when version ships
+- Plans guide implementation, then become historical record
 
 ## Development Patterns
 
@@ -214,8 +249,10 @@ See [ROADMAP.md](doc/ROADMAP.md) for planned features.
 
 ## References
 
-- ARCHITECTURE.md: v2.0 architecture and improvements over v1.x
+- DESIGN.md: Design intent, philosophy, and principles
+- ARCHITECTURE.md: Current implementation state
 - README.md: Feature overview and configuration
-- INSTALLATION.md: Installation and deployment (both direct and remote methods)
+- INSTALLATION.md: Installation and deployment
+- ROADMAP.md: Future plans
 - [CERT C Coding Standard](https://wiki.sei.cmu.edu/confluence/display/c/SEI+CERT+C+Coding+Standard)
 - [timerfd API](https://man7.org/linux/man-pages/man2/timerfd_create.2.html)
