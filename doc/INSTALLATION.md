@@ -204,7 +204,7 @@ ssh pi@<IP_ADDRESS> "systemctl is-active touch-timeout.service && echo OK"
 
 ## Configuration
 
-**The daemon works out-of-box** - no configuration required! See [README.md - Configuration](README.md#configuration) for default values.
+**The daemon works out-of-box** - no configuration required! See [README.md - Configuration](../README.md#configuration) for default values.
 
 To customize, choose one of the options below:
 
@@ -318,7 +318,7 @@ top -bn1 -p $(pgrep touch-timeout) | tail -1
 
 ## Performance Data Collection (Optional)
 
-Collect metrics to verify [README.md](README.md#performance) claims.
+Collect metrics to verify [README.md](../README.md#performance) claims.
 
 ```bash
 scp scripts/test-performance.sh <USER>@<IP>:/run/

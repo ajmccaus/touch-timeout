@@ -10,7 +10,7 @@ Planned features for future releases.
 
 This daemon manages **touchscreen timeout only**. Keyboards, mice, and other input devices are out of scope (use DPMS/xscreensaver for those).
 
-Features are evaluated against the [Design Philosophy](ARCHITECTURE.md#design-philosophy).
+Features are evaluated against the [Design Philosophy](DESIGN.md#design-philosophy).
 
 ---
 
@@ -64,4 +64,4 @@ Before proposing features, consider:
 - Does this solve a real problem for touchscreen users?
 - Can it be done with SIGUSR1 or existing configuration?
 
-See [CHANGELOG.md](CHANGELOG.md) for release history.
+See [CHANGELOG.md](../CHANGELOG.md) for release history.

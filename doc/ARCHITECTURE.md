@@ -132,7 +132,7 @@ Located in `main.c`:
 - `build/native/test_state` - State machine tests
 
 **Test counts:**
-- Config: 33 tests (parsing, validation, security)
+- Config: 44 tests (parsing, validation, security)
 - State: 21 tests (transitions, edge cases)
 
 **Performance testing:** `scripts/test-performance.sh` (on-device)
@@ -149,10 +149,12 @@ See [INSTALLATION.md](INSTALLATION.md) for deployment procedures.
 
 ## Performance Metrics
 
+Measured on Raspberry Pi 4 after 72+ hours continuous operation:
+
 | Metric | Value |
 |--------|-------|
 | CPU (idle) | < 0.05% |
-| Memory (RSS) | ~1.2 MB |
+| Memory (RSS) | ~200 KB |
 | Touch latency | ~45 ms |
 | SD writes/day | ~15 |
 | File descriptors | 3 |

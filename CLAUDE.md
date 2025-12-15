@@ -34,39 +34,13 @@ gcc -std=c17 -D_POSIX_C_SOURCE=200809L ...
 
 ### Naming Conventions
 
-**Functions:**
-- Public: `module_verb()` or `module_verb_noun()` - e.g., `state_init()`, `config_load()`
-- Static: Same pattern as public for consistency - e.g., `config_trim()`, `config_find_param()`
-- main.c helpers are exceptions (not a reusable module)
+See [DESIGN.md - Naming Conventions](doc/DESIGN.md#naming-conventions) for complete standards.
 
-**Types:**
-- Struct typedefs: `module_s` suffix - e.g., `state_s`, `config_s`
-- Enum typedefs: `module_e` suffix - e.g., `state_type_e`, `state_event_e`
-- Avoids POSIX `_t` suffix conflicts
-
-**HAL Module Pattern:**
-- `module_open()` / `module_close()` - create/destroy with fd
-- `module_get_fd()` - return fd for poll()
-- Consistent across display, input, timer modules
-
-**Variables:**
-- Globals: `g_` prefix - e.g., `g_running`, `g_config`
-- Constants/macros: `MODULE_UPPER_CASE` - e.g., `CONFIG_DEFAULT_BRIGHTNESS`
-- Locals: `snake_case`
-
-**Parameters:**
-- Handle/context first: `module_func(handle, ...)`
-- Output parameters last: `module_func(handle, input, *output)`
+**Quick reference:** `module_s` for structs, `module_e` for enums, `module_verb()` for functions.
 
 ### Security Standards
 
-Follow CERT C, POSIX, and MISRA C guidelines. When writing/modifying code:
-- INT32-C: Overflow protection in timeout calculations
-- FIO32-C: Validate all filesystem paths
-- ERR06-C: Graceful error handling (no assertions in production)
-- Signal handlers: async-signal-safe only (set flags, no I/O)
-- No dynamic allocation
-- Explicit error checking on all system calls
+See [DESIGN.md - Security Guidelines](doc/DESIGN.md#security-guidelines) for CERT C compliance requirements.
 
 
 ## Build & Testing
@@ -81,24 +55,16 @@ See [README.md](README.md) for complete build instructions and [ARCHITECTURE.md 
 
 ## Testing Strategy
 
-**Goal**: 95%+ automated, <10 minutes total manual testing.
+See [DESIGN.md - Testing Strategy](doc/DESIGN.md#testing-strategy) for coverage targets, test categories, and workflow principles.
 
-**Automated Tests** (no hardware required):
-- `scripts/test-deployment.sh`: Validates deployment changes in <5 seconds (syntax, structure, references)
-- `make test`: All unit tests (state + config modules)
-- All tests run on every commit
+**Commands:**
+- `make test` - Run all unit tests
+- `scripts/test-deployment.sh` - Validate deployment changes (<5 seconds)
 
-**Manual Testing** (on device - minimize this):
+**Manual verification** (on device, minimize):
 - Touch responsiveness after deployment
 - Log verification via `journalctl`
-- Basic state transitions (FULL → DIMMED → OFF)
-
-**Edge Case Focus**:
-- Invalid IP addresses, missing cross-compilers, SSH failures
-- Config out-of-range values, path traversal attempts
-- Timer edge cases (wraparound, rapid transitions)
-
-**Workflow**: Write automated test FIRST whenever possible. If manual testing identifies a bug, add automated regression test.
+- State transitions: FULL → DIMMED → OFF
 
 ## SD Card Write Optimization
 
@@ -192,30 +158,9 @@ When documenting, reference the SSoT instead of duplicating.
 
 ## Development Patterns
 
-### Adding a Configuration Parameter
+See [DESIGN.md - Development Patterns](doc/DESIGN.md#development-patterns) for extending configuration, state machine, and HAL modules.
 
-1. Add to `config_t` struct in config.h
-2. Add descriptor entry in `config_params[]` table in config.c
-3. Add test case in tests/test_config.c (parsing + validation)
-
-### Adding State Machine Logic
-
-Keep state.c pure (no I/O). All device operations go in main.c through HAL modules.
-
-### Testing New Code
-
-State machine tests can use pure C without hardware:
-```c
-state_t state;
-state_init(&state, 150, 15, 270, 300);  // user_brightness, dim_brightness, dim_timeout, off_timeout
-int brightness;
-state_handle_event(&state, STATE_EVENT_TOUCH, &brightness);
-assert(state_get_brightness(&state) == 150);  // FULL state
-```
-
-### Script Organization
-
-Test scripts (`test-*.sh`) live in `scripts/` not `tests/`:
+**Script Organization:**
 - `tests/` = C unit test source files (compiled executables)
 - `scripts/` = Shell scripts (deployment, testing, automation)
 
@@ -238,10 +183,7 @@ systemctl status touch-timeout.service
 
 ## Known Limitations
 
-- Linux-only (timerfd, sysfs, /dev/input)
-- Single display only
-- Fixed device paths (/sys/class/backlight, /dev/input)
-- No multi-device input support
+See [ARCHITECTURE.md - Known Limitations](doc/ARCHITECTURE.md#known-limitations).
 
 ## Future Roadmap (v2.1+)
 

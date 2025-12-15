@@ -81,8 +81,8 @@ Complete architectural refactoring from monolithic to modular design with enhanc
 - Signal-safe handler implementation
 
 **Documentation:**
-- [ARCHITECTURE.md](ARCHITECTURE.md) - Complete technical reference
-- [INSTALLATION.md](INSTALLATION.md) - Comprehensive installation guide (direct + remote methods)
+- [ARCHITECTURE.md](doc/ARCHITECTURE.md) - Complete technical reference
+- [INSTALLATION.md](doc/INSTALLATION.md) - Comprehensive installation guide (direct + remote methods)
 - Improved [README.md](README.md) with quick-start examples
 - Project-specific [CLAUDE.md](CLAUDE.md) for AI-assisted development
 
@@ -188,7 +188,7 @@ scp touch-timeout.service root@IP:/etc/systemd/system/
 make arm32 && scripts/deploy-arm.sh root@IP
 ```
 
-See [INSTALLATION.md](INSTALLATION.md) for complete deployment documentation.
+See [INSTALLATION.md](doc/INSTALLATION.md) for complete deployment documentation.
 
 ---
 

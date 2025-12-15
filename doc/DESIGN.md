@@ -271,3 +271,29 @@ Follow CERT C, POSIX, and MISRA C guidelines:
 - Valid input handling
 - Invalid input handling (boundary conditions)
 - Security (path traversal, overflow, etc.)
+
+**Edge case focus:**
+- Invalid inputs: IP addresses, paths, out-of-range values
+- System boundaries: missing files, permission errors, device disconnection
+- Timing: wraparound, rapid transitions, clock adjustments
+
+**Workflow principle:** Write automated test FIRST. If manual testing identifies a bug, add automated regression test before fixing.
+
+## Development Patterns
+
+### Adding a Configuration Parameter
+
+1. Add field to `config_s` struct in config.h
+2. Add descriptor entry in `config_params[]` table in config.c
+3. Add test case in tests/test_config.c (parsing + validation)
+
+### Adding State Machine Logic
+
+Keep state.c pure (no I/O). All device operations go in main.c through HAL modules.
+
+### Extending HAL Modules
+
+Follow the contract pattern:
+- `module_open()` / `module_close()` for lifecycle
+- `module_get_fd()` for poll() integration
+- Return error codes, not exceptions
