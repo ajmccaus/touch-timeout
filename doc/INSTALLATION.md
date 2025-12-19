@@ -1,4 +1,4 @@
-# Installation Guide - touch-timeout v2.0
+# Installation Guide - touch-timeout v0.7
 
 Comprehensive guide for installing touch-timeout on Raspberry Pi.
 
@@ -180,63 +180,7 @@ ssh <USER>@<IP_ADDRESS> "echo OK"
 
 ## Configuration
 
-**The daemon works out-of-box** - no configuration required!
-
-**Defaults:**
-- Brightness: 150 (of 255)
-- Timeout: 300 seconds (5 minutes)
-- Dim at: 10% of timeout (30 seconds)
-
-### Customizing with systemd (Recommended)
-
-Use systemd's override mechanism - changes survive package updates:
-
-```bash
-sudo systemctl edit touch-timeout
-```
-
-Add your custom ExecStart:
-
-```ini
-[Service]
-ExecStart=
-ExecStart=/usr/bin/touch-timeout -b 200 -t 600
-```
-
-Save and restart:
-
-```bash
-sudo systemctl restart touch-timeout
-```
-
-### CLI Options
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `-b, --brightness=N` | Full brightness (15-255) | 150 |
-| `-t, --timeout=N` | Off timeout in seconds (10-86400) | 300 |
-| `-d, --dim-percent=N` | Dim at N% of timeout (1-100) | 10 |
-| `-l, --backlight=NAME` | Backlight device | rpi_backlight |
-| `-i, --input=NAME` | Input device | event0 |
-| `-f, --foreground` | Run in foreground, log to stderr | |
-| `-v, --verbose` | Enable verbose logging | |
-
-### Examples
-
-**Brighter screen, longer timeout:**
-```bash
-sudo systemctl edit touch-timeout
-# Add:
-[Service]
-ExecStart=
-ExecStart=/usr/bin/touch-timeout -b 200 -t 600
-```
-
-**Debug mode (run manually):**
-```bash
-sudo systemctl stop touch-timeout
-sudo /usr/bin/touch-timeout -f -v
-```
+The daemon works out-of-box with sensible defaults. See [README.md - Configuration](../README.md#configuration) for CLI options and customization via systemd.
 
 ### External Wake (shairport-sync)
 
@@ -396,5 +340,5 @@ sudo systemctl daemon-reload
 ## Additional Resources
 
 - **README.md**: Feature overview and project description
-- **ARCHITECTURE.md**: v2.0 architecture and design decisions
+- **ARCHITECTURE.md**: Architecture and design decisions
 - **Makefile**: Build system reference and targets

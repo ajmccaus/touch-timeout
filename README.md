@@ -1,33 +1,27 @@
 # touch-timeout
 Lightweight touchscreen backlight manager for Raspberry Pi 7" displays. Automatically dims and powers off the display during inactivity, instantly restoring on touch. Optimized for minimal Linux distributions like HifiBerry OS.
 
-**Version:** 2.0.0 | [CHANGELOG](CHANGELOG.md) | [ARCHITECTURE](doc/ARCHITECTURE.md)
+**Version:** 0.7 | [CHANGELOG](CHANGELOG.md) | [ARCHITECTURE](doc/ARCHITECTURE.md)
 
-## Getting Started
+## Quick Start
 
-Choose your installation method:
+**From your Linux/WSL2 development machine:**
 
-### For Raspberry Pi Users
+```bash
+git clone https://github.com/ajmccaus/touch-timeout.git
+cd touch-timeout
+make deploy-arm64 RPI=<IP_ADDRESS>
+```
 
-**Installing directly on your Raspberry Pi:**
+This cross-compiles and deploys to your Raspberry Pi in one step. See [INSTALLATION.md](doc/INSTALLATION.md) for prerequisites and options.
+
+**Or build directly on Raspberry Pi:**
 
 ```bash
 git clone https://github.com/ajmccaus/touch-timeout.git
 cd touch-timeout
 make && sudo make install
 ```
-
-See [INSTALLATION.md](doc/INSTALLATION.md) for complete guide.
-
-### For Developers
-
-**Cross-compile on Linux/WSL2 and deploy to Raspberry Pi:**
-
-```bash
-make deploy-arm64 RPI=<IP_ADDRESS>
-```
-
-See [INSTALLATION.md - Remote Deployment](doc/INSTALLATION.md#method-2-remote-deployment-cross-compilation) for details.
 
 ---
 
@@ -76,7 +70,6 @@ ExecStart=/usr/bin/touch-timeout -b 200 -t 600
 | `-d, --dim-percent=N` | Dim at N% of timeout (1-100) | 10 |
 | `-l, --backlight=NAME` | Backlight device | rpi_backlight |
 | `-i, --input=NAME` | Input device | event0 |
-| `-f, --foreground` | Run in foreground, log to stderr | |
 | `-v, --verbose` | Verbose logging | |
 
 **External Wake (shairport-sync):**
@@ -92,9 +85,18 @@ See [INSTALLATION.md - Configuration](doc/INSTALLATION.md#configuration) for mor
 
 Optimized for 24/7 embedded operation: <0.05% CPU idle, ~200 KB memory, instant touch response.
 
-## Future Roadmap
+## Scope & Non-Goals
 
-See [ROADMAP.md](doc/ROADMAP.md) for planned features.
+This daemon manages **touchscreen timeout only**.
+
+**Out of scope:**
+- Keyboard/mouse input (use DPMS/xscreensaver)
+- Multi-device input monitoring
+- Adaptive brightness / ambient light sensing
+- Audio activity monitoring (use SIGUSR1 integration instead)
+- Web API / D-Bus interface
+
+**Contributing:** Before proposing features, consider: Does this solve a real problem for touchscreen users? Can it be done with SIGUSR1 or existing configuration?
 
 ## Support Policy
 This is a learning project maintained in my spare time.
