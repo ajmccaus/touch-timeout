@@ -7,15 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Build system**: Flattened build output to `build/touch-timeout-{version}-{arch}`
+- **Deployment**: New `make deploy-arm64 RPI=<ip>` targets replace standalone deploy script
+- **SSH handling**: Single password prompt via ControlMaster (was multiple prompts)
+- **deploy.sh**: Simplified from 258 to ~100 lines (Makefile handles orchestration)
+- **test-deployment.sh**: Simplified from 112 to 47 lines (syntax validation focus)
+
 ### Improved
 
 - **Performance script UX**: Progress dots instead of per-line CPU output, added CPU_MAX_PCT metric
 - **Script robustness**: Process death detection mid-test, safe arithmetic for edge cases
 - **Documentation consistency**: Fixed CPU claim (0.1% -> 0.05% in README features)
-
-### Changed
-
-- **test-deployment.sh**: Simplified from 112 to 47 lines (syntax validation focus)
 
 ## [2.0.0] - 2025-12-11
 
@@ -81,8 +85,8 @@ Complete architectural refactoring from monolithic to modular design with enhanc
 - Signal-safe handler implementation
 
 **Documentation:**
-- [ARCHITECTURE.md](ARCHITECTURE.md) - Complete technical reference
-- [INSTALLATION.md](INSTALLATION.md) - Comprehensive installation guide (direct + remote methods)
+- [ARCHITECTURE.md](doc/ARCHITECTURE.md) - Complete technical reference
+- [INSTALLATION.md](doc/INSTALLATION.md) - Comprehensive installation guide (direct + remote methods)
 - Improved [README.md](README.md) with quick-start examples
 - Project-specific [CLAUDE.md](CLAUDE.md) for AI-assisted development
 
@@ -188,7 +192,7 @@ scp touch-timeout.service root@IP:/etc/systemd/system/
 make arm32 && scripts/deploy-arm.sh root@IP
 ```
 
-See [INSTALLATION.md](INSTALLATION.md) for complete deployment documentation.
+See [INSTALLATION.md](doc/INSTALLATION.md) for complete deployment documentation.
 
 ---
 

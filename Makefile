@@ -10,12 +10,13 @@
 VERSION_MAJOR = 2
 VERSION_MINOR = 0
 VERSION_PATCH = 0
+VERSION = $(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_PATCH)
 
 CC = gcc
 CFLAGS = -O2 -Wall -Wextra -Wno-unused-parameter -std=c17 -D_POSIX_C_SOURCE=200809L -Iinclude
 LDFLAGS =
 BUILD_DIR = build
-TARGET = $(BUILD_DIR)/native/touch-timeout
+TARGET = $(BUILD_DIR)/touch-timeout-$(VERSION)-native
 
 # Detect OS - add mock includes for non-Linux systems
 UNAME_S := $(shell uname -s)
@@ -52,56 +53,51 @@ BINDIR = $(PREFIX)/bin
 SYSTEMD_UNIT_DIR = /etc/systemd/system
 CONFIG_DIR = /etc
 
-.PHONY: all clean install uninstall test coverage version help arm32 arm64 clean-all
+.PHONY: all clean install uninstall test coverage version help arm32 arm64 clean-all deploy-arm32 deploy-arm64
 
-all: version $(BUILD_DIR)/native $(TARGET)
+all: version $(BUILD_DIR) $(TARGET)
 
 # Display help information
 help:
-	@echo "Touch-timeout daemon build system (v$(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_PATCH))"
+	@echo "Touch-timeout daemon build system (v$(VERSION))"
 	@echo ""
-	@echo "Targets:"
-	@echo "  make              - Build daemon binary → $(BUILD_DIR)/native/touch-timeout"
-	@echo "  make version      - Generate version.h from VERSION_* variables"
-	@echo "  make test         - Run unit tests"
-	@echo "  make coverage     - Generate code coverage report"
-	@echo "  make install      - Install daemon and systemd service"
-	@echo "  make uninstall    - Remove installed files"
-	@echo "  make clean        - Remove build artifacts"
-	@echo "  make help         - Display this help message"
+	@echo "Build:"
+	@echo "  make                 - Build for native platform"
+	@echo "  make arm32           - Cross-compile for ARM 32-bit (RPi)"
+	@echo "  make arm64           - Cross-compile for ARM 64-bit (RPi4)"
 	@echo ""
-	@echo "Configuration:"
-	@echo "  PREFIX            - Installation prefix (default: /usr)"
-	@echo "  SYSTEMD_UNIT_DIR  - Systemd service directory (default: /etc/systemd/system)"
-	@echo "  CONFIG_DIR        - Config file directory (default: /etc)"
+	@echo "Deploy to RPi:"
+	@echo "  make deploy-arm64 RPI=<ip>              - Build + deploy + install"
+	@echo "  make deploy-arm64 RPI=<ip> MANUAL=1     - Build + deploy only"
+	@echo "  make deploy-arm64 RPI=<ip> RPI_USER=pi  - Deploy as non-root user"
 	@echo ""
-	@echo "Build flags:"
-	@echo "  CFLAGS            - C compiler flags (default: -O2 -Wall -std=c17)"
-	@echo "  CC                - C compiler (default: gcc)"
+	@echo "Other:"
+	@echo "  make test            - Run unit tests"
+	@echo "  make coverage        - Generate coverage report"
+	@echo "  make install         - Install locally (on RPi)"
+	@echo "  make clean           - Remove build artifacts"
 	@echo ""
-	@echo "Systemd support: $(if $(SYSTEMD_PKG),enabled,disabled - install libsystemd-dev)"
-	@echo ""
-	@echo "Cross-compilation:"
-	@echo "  make arm32         - Build for ARM 32-bit (armv7l) → $(BUILD_DIR)/arm32/touch-timeout"
-	@echo "  make arm64         - Build for ARM 64-bit (aarch64) → $(BUILD_DIR)/arm64/touch-timeout"
-	@echo ""
-	@echo "Deployment:"
-	@echo "  scripts/deploy-arm.sh <IP_ADDRESS> [arm32|arm64] [OPTIONS]"
-	@echo "    Options: --user USER, --batch (for CI/CD)"
-	@echo "    - Compile and deploy to RPi4 staging location (/run/touch-timeout-staging/)"
-	@echo "    - Then SSH to RPi and run: sudo /run/touch-timeout-staging/install.sh"
+	@echo "Output: $(BUILD_DIR)/touch-timeout-$(VERSION)-{native,arm32,arm64}"
 
 # Cross-compilation targets for ARM
-# Output organized into build/ subdirectories
-arm32: version
-	@mkdir -p $(BUILD_DIR)/arm32
-	$(MAKE) clean
-	$(MAKE) CC=arm-linux-gnueabihf-gcc CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -std=c17 -D_POSIX_C_SOURCE=200809L -Iinclude -march=armv7-a -mfpu=neon" TARGET=$(BUILD_DIR)/arm32/touch-timeout all
+arm32: version $(BUILD_DIR)
+	$(MAKE) clean-objs
+	$(MAKE) CC=arm-linux-gnueabihf-gcc CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -std=c17 -D_POSIX_C_SOURCE=200809L -Iinclude -march=armv7-a -mfpu=neon" TARGET=$(BUILD_DIR)/touch-timeout-$(VERSION)-arm32 all
 
-arm64: version
-	@mkdir -p $(BUILD_DIR)/arm64
-	$(MAKE) clean
-	$(MAKE) CC=aarch64-linux-gnu-gcc CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -std=c17 -D_POSIX_C_SOURCE=200809L -Iinclude -march=armv8-a" TARGET=$(BUILD_DIR)/arm64/touch-timeout all
+arm64: version $(BUILD_DIR)
+	$(MAKE) clean-objs
+	$(MAKE) CC=aarch64-linux-gnu-gcc CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -std=c17 -D_POSIX_C_SOURCE=200809L -Iinclude -march=armv8-a" TARGET=$(BUILD_DIR)/touch-timeout-$(VERSION)-arm64 all
+
+# Deploy targets (require RPI=<ip>)
+deploy-arm32:
+	@test -n "$(RPI)" || { echo "Usage: make deploy-arm32 RPI=<ip>"; exit 1; }
+	$(MAKE) arm32
+	scripts/deploy.sh $(RPI) $(BUILD_DIR)/touch-timeout-$(VERSION)-arm32
+
+deploy-arm64:
+	@test -n "$(RPI)" || { echo "Usage: make deploy-arm64 RPI=<ip>"; exit 1; }
+	$(MAKE) arm64
+	scripts/deploy.sh $(RPI) $(BUILD_DIR)/touch-timeout-$(VERSION)-arm64
 
 # Generate version.h from VERSION_* variables
 version:
@@ -124,12 +120,12 @@ version:
 	@echo "" >> include/version.h
 	@echo "#endif  // VERSION_H" >> include/version.h
 
-# Create build directories
-$(BUILD_DIR)/native:
+# Create build directory
+$(BUILD_DIR):
 	@mkdir -p $@
 
 # Build main binary
-$(TARGET): $(OBJS) | $(BUILD_DIR)/native
+$(TARGET): $(OBJS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 # Pattern rule for object files
@@ -144,13 +140,18 @@ $(SRC_DIR)/input.o: $(SRC_DIR)/input.h
 $(SRC_DIR)/state.o: $(SRC_DIR)/state.h
 $(SRC_DIR)/timer.o: $(SRC_DIR)/timer.h
 
-# Clean build artifacts (current target only)
+# Clean object files only (used between cross-compile targets)
+clean-objs:
+	rm -f $(OBJS)
+
+# Clean build artifacts
 clean:
-	rm -f $(TARGET) $(OBJS)
+	rm -f $(OBJS)
+	rm -f $(BUILD_DIR)/touch-timeout-*
 	rm -f include/version.h
 	$(MAKE) -C tests clean
 
-# Clean all artifacts including cross-compiled builds
+# Clean all artifacts including build directory
 clean-all: clean
 	rm -rf $(BUILD_DIR)
 

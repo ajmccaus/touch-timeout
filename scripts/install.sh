@@ -68,9 +68,9 @@ BINARY_NAME=$(basename "$BINARY_FILE")
 
 # Parse version and architecture from filename
 # Format: touch-timeout-VERSION-ARCH
-if [[ ! "$BINARY_NAME" =~ ^touch-timeout-([0-9]+\.[0-9]+\.[0-9]+)-(arm32|arm64|x86_64|x86_32)$ ]]; then
+if [[ ! "$BINARY_NAME" =~ ^touch-timeout-([0-9]+\.[0-9]+\.[0-9]+)-(arm32|arm64|native)$ ]]; then
     log_error "Invalid binary filename format: $BINARY_NAME"
-    echo "Expected format: touch-timeout-VERSION-ARCH (e.g., touch-timeout-2.0.0-arm32)"
+    echo "Expected format: touch-timeout-VERSION-ARCH (e.g., touch-timeout-2.0.0-arm64)"
     exit 1
 fi
 

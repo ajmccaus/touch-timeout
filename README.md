@@ -1,7 +1,7 @@
 # touch-timeout
 Lightweight touchscreen backlight manager for Raspberry Pi 7" displays. Automatically dims and powers off the display during inactivity, instantly restoring on touch. Optimized for minimal Linux distributions like HifiBerry OS.
 
-**Version:** 2.0.0 | [CHANGELOG](CHANGELOG.md) | [ARCHITECTURE](ARCHITECTURE.md)
+**Version:** 2.0.0 | [CHANGELOG](CHANGELOG.md) | [ARCHITECTURE](doc/ARCHITECTURE.md)
 
 ## Getting Started
 
@@ -17,18 +17,17 @@ cd touch-timeout
 make && sudo make install
 ```
 
-→ **[Complete guide: INSTALLATION.md - Method 1](INSTALLATION.md#method-1-direct-installation-on-raspberry-pi)**
+→ **[Complete guide: INSTALLATION.md - Method 1](doc/INSTALLATION.md#method-1-direct-installation-on-raspberry-pi)**
 
 ### For Developers
 
 **Cross-compile on Linux/WSL2 and deploy to Raspberry Pi:**
 
 ```bash
-# One-step deployment (auto-install, recommended)
-./scripts/deploy-arm.sh <IP_ADDRESS> arm64
+make deploy-arm64 RPI=<IP_ADDRESS>
 ```
 
-→ **[Complete guide: INSTALLATION.md - Method 2](INSTALLATION.md#method-2-remote-deployment-cross-compilation)**
+→ **[Complete guide: INSTALLATION.md - Method 2](doc/INSTALLATION.md#method-2-remote-deployment-cross-compilation)**
 
 ---
 
@@ -54,17 +53,9 @@ make && sudo make install
 
 ## Performance
 
-Benchmarked on Raspberry Pi 4 (1.5GHz ARM Cortex-A72):
+Optimized for 24/7 embedded operation: <0.05% CPU idle, ~200 KB memory, instant touch response.
 
-| Metric | Value | Notes |
-|--------|-------|-------|
-| **CPU (idle)** | <0.05% | Poll-based event loop, near-zero overhead |
-| **CPU (active)** | <1% | Brief spikes during touch events |
-| **Memory (RSS)** | 0.2 MB | Minimal footprint, no leaks after extended runtime |
-| **Latency** | <200ms | Touch-to-restore response time |
-| **I/O efficiency** | Cached | No redundant sysfs writes |
-
-Tested over 24+ hours continuous operation with no performance degradation.
+See [ARCHITECTURE.md - Performance Metrics](doc/ARCHITECTURE.md#performance-metrics) for benchmarks.
 
 ## Configuration
 
@@ -75,13 +66,13 @@ Tested over 24+ hours continuous operation with no performance degradation.
 - `backlight=rpi_backlight` - RPi official 7" touchscreen backlight device
 - `device=event0` - First input device
 
-**To customize:** See [INSTALLATION.md - Configuration](INSTALLATION.md#configuration) for complete examples:
+**To customize:** See [INSTALLATION.md - Configuration](doc/INSTALLATION.md#configuration) for complete examples:
 - Creating `/etc/touch-timeout.conf` (copy/paste template provided)
 - Using CLI arguments in systemd service file
 
 ## Future Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for planned features.
+See [ROADMAP.md](doc/ROADMAP.md) for planned features.
 
 ## Support Policy
 This is a learning project maintained in my spare time.
