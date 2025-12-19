@@ -14,7 +14,6 @@
 #include <unistd.h>
 #include <signal.h>
 #include <errno.h>
-#include <syslog.h>
 #include <poll.h>
 #include <fcntl.h>
 #include <time.h>
@@ -62,8 +61,6 @@ typedef struct {
     int dim_percent;
     char backlight[64];
     char device[64];
-    bool foreground;
-    bool verbose;
 } config_t;
 
 /* ============================================================
@@ -72,29 +69,15 @@ typedef struct {
 
 static volatile sig_atomic_t g_running = 1;
 static volatile sig_atomic_t g_wake_requested = 0;
-static bool g_foreground = false;
 static bool g_verbose = false;
 
 /* ============================================================
  * SECTION: Logging Macros
  * ============================================================ */
 
-#define log_info(fmt, ...) do { \
-    if (g_foreground) fprintf(stderr, "INFO: " fmt "\n", ##__VA_ARGS__); \
-    else syslog(LOG_INFO, fmt, ##__VA_ARGS__); \
-} while(0)
-
-#define log_err(fmt, ...) do { \
-    if (g_foreground) fprintf(stderr, "ERROR: " fmt "\n", ##__VA_ARGS__); \
-    else syslog(LOG_ERR, fmt, ##__VA_ARGS__); \
-} while(0)
-
-#define log_verbose(fmt, ...) do { \
-    if (g_verbose) { \
-        if (g_foreground) fprintf(stderr, "DEBUG: " fmt "\n", ##__VA_ARGS__); \
-        else syslog(LOG_DEBUG, fmt, ##__VA_ARGS__); \
-    } \
-} while(0)
+#define log_info(fmt, ...)    fprintf(stderr, "INFO: " fmt "\n", ##__VA_ARGS__)
+#define log_err(fmt, ...)     fprintf(stderr, "ERROR: " fmt "\n", ##__VA_ARGS__)
+#define log_verbose(fmt, ...) do { if (g_verbose) fprintf(stderr, "DEBUG: " fmt "\n", ##__VA_ARGS__); } while(0)
 
 /* ============================================================
  * SECTION: Utility Functions
@@ -120,7 +103,6 @@ static void usage(const char *prog) {
         "  -d, --dim-percent=N  Dim at N%% of timeout (1-100, default %d)\n"
         "  -l, --backlight=NAME Backlight device (default %s)\n"
         "  -i, --input=NAME     Input device (default %s)\n"
-        "  -f, --foreground     Run in foreground, log to stderr\n"
         "  -v, --verbose        Verbose logging\n"
         "  -V, --version        Show version\n"
         "  -h, --help           Show this help\n"
@@ -135,7 +117,8 @@ static bool validate_device_name(const char *name) {
     /* Reject paths containing / or .. to prevent path traversal */
     if (strchr(name, '/') != NULL || strstr(name, "..") != NULL)
         return false;
-    if (strlen(name) == 0 || strlen(name) >= 64)
+    size_t len = strlen(name);
+    if (len == 0 || len >= 64)
         return false;
     return true;
 }
@@ -147,7 +130,6 @@ static void parse_args(int argc, char **argv, config_t *cfg) {
         {"dim-percent", required_argument, 0, 'd'},
         {"backlight",   required_argument, 0, 'l'},
         {"input",       required_argument, 0, 'i'},
-        {"foreground",  no_argument,       0, 'f'},
         {"verbose",     no_argument,       0, 'v'},
         {"version",     no_argument,       0, 'V'},
         {"help",        no_argument,       0, 'h'},
@@ -155,7 +137,7 @@ static void parse_args(int argc, char **argv, config_t *cfg) {
     };
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "b:t:d:l:i:fvVh", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "b:t:d:l:i:vVh", long_options, NULL)) != -1) {
         switch (opt) {
             case 'b':
                 cfg->brightness = atoi(optarg);
@@ -180,11 +162,8 @@ static void parse_args(int argc, char **argv, config_t *cfg) {
                 }
                 strncpy(cfg->device, optarg, sizeof(cfg->device) - 1);
                 break;
-            case 'f':
-                cfg->foreground = true;
-                break;
             case 'v':
-                cfg->verbose = true;
+                g_verbose = true;
                 break;
             case 'V':
                 printf("touch-timeout %s\n", VERSION_STRING);
@@ -316,24 +295,11 @@ int main(int argc, char *argv[]) {
         .timeout_sec = DEFAULT_TIMEOUT_SEC,
         .dim_percent = DEFAULT_DIM_PERCENT,
         .backlight = DEFAULT_BACKLIGHT,
-        .device = DEFAULT_DEVICE,
-        .foreground = false,
-        .verbose = false
+        .device = DEFAULT_DEVICE
     };
 
     /* Parse CLI args */
     parse_args(argc, argv, &cfg);
-
-    /* Set global logging flags */
-    g_foreground = cfg.foreground;
-    g_verbose = cfg.verbose;
-
-    /* Initialize syslog if not foreground */
-    if (!g_foreground) {
-        openlog("touch-timeout", LOG_PID | LOG_CONS, LOG_DAEMON);
-    }
-
-    log_info("touch-timeout v%s starting", VERSION_STRING);
 
     /* Open devices (fail fast on error) */
     int bl_fd = open_backlight(cfg.backlight);
@@ -395,8 +361,8 @@ int main(int argc, char *argv[]) {
     /* Notify systemd */
     sd_notify(0, "READY=1");
 
-    log_info("Started: brightness=%d, dim=%d, dim_timeout=%ums, off_timeout=%ums",
-             cfg.brightness, dim_bright, dim_ms, off_ms);
+    log_info("touch-timeout v%s: brightness=%d, dim=%d, dim_ms=%u, off_ms=%u",
+             VERSION_STRING, cfg.brightness, dim_bright, dim_ms, off_ms);
 
     /* Event loop */
     struct pollfd pfd = { .fd = input_fd, .events = POLLIN };
@@ -460,10 +426,6 @@ int main(int argc, char *argv[]) {
     sd_notify(0, "STOPPING=1");
     close(input_fd);
     close(bl_fd);
-
-    if (!g_foreground) {
-        closelog();
-    }
 
     return 0;
 }
