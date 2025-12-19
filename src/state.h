@@ -33,6 +33,11 @@ typedef struct {
  *
  * Sets state to STATE_FULL with last_touch_ms = 0
  * Caller should call state_touch() immediately with current time
+ *
+ * Preconditions (caller must ensure):
+ *   - brightness_full >= 0, brightness_dim >= 0
+ *   - dim_timeout_ms < off_timeout_ms
+ *   - off_timeout_ms <= INT_MAX (for poll() compatibility)
  */
 void state_init(state_s *st, int brightness_full, int brightness_dim,
                 uint32_t dim_timeout_ms, uint32_t off_timeout_ms);
@@ -61,6 +66,7 @@ int state_timeout(state_s *st, uint32_t now_ms);
  * Get ms until next transition
  *
  * Returns: ms until next state change, 0 if already due, -1 if none (OFF state)
+ * Note: Return value fits in int if state_init() preconditions were met
  */
 int state_get_timeout_ms(const state_s *st, uint32_t now_ms);
 

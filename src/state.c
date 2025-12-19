@@ -59,8 +59,10 @@ int state_get_timeout_ms(const state_s *st, uint32_t now_ms) {
 
         case STATE_OFF:
             return -1;  /* No timeout, wait for touch */
+
+        default:
+            return -1;  /* Invalid state */
     }
-    return -1;
 }
 
 int state_get_brightness(const state_s *st) {
@@ -71,8 +73,9 @@ int state_get_brightness(const state_s *st) {
             return st->brightness_dim;
         case STATE_OFF:
             return 0;
+        default:
+            return -1;  /* Invalid state */
     }
-    return -1;
 }
 
 state_e state_get_current(const state_s *st) {

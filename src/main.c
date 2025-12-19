@@ -52,6 +52,14 @@ static inline int sd_notify(int unset_environment, const char *state) {
 #define MIN_DIM_BRIGHTNESS   10
 #define MIN_DIM_TIMEOUT_MS   1000
 
+/* Ensure timeout fits in poll() int parameter */
+_Static_assert(MAX_TIMEOUT_SEC <= INT_MAX / 1000,
+               "MAX_TIMEOUT_SEC too large for poll() timeout");
+
+/* Ensure brightness * dim_percent fits in int */
+_Static_assert(MAX_BRIGHTNESS * MAX_DIM_PERCENT <= INT_MAX,
+               "MAX_BRIGHTNESS * MAX_DIM_PERCENT overflow risk");
+
 /* ============================================================
  * SECTION: Buffer Sizes and Paths
  * ============================================================ */
@@ -105,6 +113,12 @@ static bool g_verbose = false;
  * SECTION: Utility Functions
  * ============================================================ */
 
+/*
+ * Get current time in milliseconds (CLOCK_MONOTONIC).
+ * Returns uint32_t which wraps every ~49.7 days.
+ * Wraparound is intentional: subtraction still yields correct elapsed time
+ * due to unsigned arithmetic. See test_wraparound_handling in test suite.
+ */
 static uint32_t now_ms(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -290,13 +304,18 @@ static int set_brightness(int fd, int value) {
     char buf[SYSFS_VALUE_LEN];
     int len = snprintf(buf, sizeof(buf), "%d", value);
 
+    if (len < 0 || len >= (int)sizeof(buf)) {
+        log_err("brightness value formatting failed");
+        return -1;
+    }
+
     if (lseek(fd, 0, SEEK_SET) < 0) {
         log_err("lseek failed: %s", strerror(errno));
         return -1;
     }
 
-    ssize_t written = write(fd, buf, len);
-    if (written != len) {
+    ssize_t written = write(fd, buf, (size_t)len);
+    if (written != (ssize_t)len) {
         log_err("brightness write failed: %s", strerror(errno));
         return -1;
     }
@@ -380,11 +399,11 @@ int main(int argc, char *argv[]) {
     if (dim_bright < MIN_DIM_BRIGHTNESS)
         dim_bright = MIN_DIM_BRIGHTNESS;
 
-    uint32_t dim_ms = (uint32_t)cfg.timeout_sec * cfg.dim_percent * 10;  /* percent of timeout in ms */
+    /* Calculate timeouts: off_ms first, then dim_ms as percentage of off_ms */
+    uint32_t off_ms = (uint32_t)cfg.timeout_sec * 1000U;
+    uint32_t dim_ms = (off_ms * (uint32_t)cfg.dim_percent) / 100U;
     if (dim_ms < MIN_DIM_TIMEOUT_MS)
         dim_ms = MIN_DIM_TIMEOUT_MS;
-
-    uint32_t off_ms = (uint32_t)cfg.timeout_sec * 1000;
 
     /* Ensure dim_ms < off_ms */
     if (dim_ms >= off_ms) {
@@ -409,14 +428,17 @@ int main(int argc, char *argv[]) {
     int cached_brightness = cfg.brightness;
 
     /* Setup signals */
-    struct sigaction sa;
-    memset(&sa, 0, sizeof(sa));
+    struct sigaction sa = {0};
     sa.sa_handler = handle_signal;
     sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0;
-    sigaction(SIGTERM, &sa, NULL);
-    sigaction(SIGINT, &sa, NULL);
-    sigaction(SIGUSR1, &sa, NULL);
+    if (sigaction(SIGTERM, &sa, NULL) < 0 ||
+        sigaction(SIGINT, &sa, NULL) < 0 ||
+        sigaction(SIGUSR1, &sa, NULL) < 0) {
+        log_err("sigaction failed: %s", strerror(errno));
+        close(input_fd);
+        close(bl_fd);
+        return EXIT_FAILURE;
+    }
     signal(SIGPIPE, SIG_IGN);
 
     /* Notify systemd */
@@ -442,9 +464,10 @@ int main(int argc, char *argv[]) {
                     now = now_ms();
                     int new_bright = state_touch(&state, now);
                     if (new_bright >= 0 && new_bright != cached_brightness) {
-                        set_brightness(bl_fd, new_bright);
-                        cached_brightness = new_bright;
-                        log_verbose("SIGUSR1 -> FULL (brightness %d)", new_bright);
+                        if (set_brightness(bl_fd, new_bright) == 0) {
+                            cached_brightness = new_bright;
+                            log_verbose("SIGUSR1 -> FULL (brightness %d)", new_bright);
+                        }
                     }
                 }
                 continue;
@@ -475,14 +498,18 @@ int main(int argc, char *argv[]) {
 
         /* Update brightness if changed (with caching) */
         if (new_bright >= 0 && new_bright != cached_brightness) {
-            set_brightness(bl_fd, new_bright);
-            cached_brightness = new_bright;
+            if (set_brightness(bl_fd, new_bright) == 0) {
+                cached_brightness = new_bright;
+            }
         }
     }
 
     /* Restore brightness and cleanup */
-    set_brightness(bl_fd, cfg.brightness);
-    log_info("Brightness restored to %d, shutting down", cfg.brightness);
+    if (set_brightness(bl_fd, cfg.brightness) == 0) {
+        log_info("Brightness restored to %d, shutting down", cfg.brightness);
+    } else {
+        log_warn("Could not restore brightness on shutdown");
+    }
 
     sd_notify(0, "STOPPING=1");
     close(input_fd);

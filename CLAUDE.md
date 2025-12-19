@@ -40,7 +40,12 @@ touch or external signal (e.g., from shairport-sync).
 
 This project follows production-ready embedded C daemon standards to ensure robust, maintainable, and robust code. Think DRY and self documenting. 
 
-Language: C99
+All coding must follow best coding practices and patterns, not just work by accident:
+  - No magic numbers         
+  - Compile-time safety checks where possible                                                                  
+  - Modern C patterns (EXIT_*, snprintf etc.)                                                               
+  - Consistent error handling      
+  - Spell-check identifiers 
 
 ## Naming Conventions
 
