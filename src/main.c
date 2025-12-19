@@ -20,6 +20,7 @@
 #include <getopt.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <limits.h>
 #include <linux/input.h>
 
 /* Systemd notification support */
@@ -52,6 +53,26 @@ static inline int sd_notify(int unset_environment, const char *state) {
 #define MIN_DIM_TIMEOUT_MS   1000
 
 /* ============================================================
+ * SECTION: Buffer Sizes and Paths
+ * ============================================================ */
+
+/* Filesystem paths (Linux sysfs/devfs conventions) */
+#define SYSFS_BACKLIGHT_DIR  "/sys/class/backlight"
+#define DEV_INPUT_DIR        "/dev/input"
+
+/* Buffer sizes */
+#define MAX_DEVICE_NAME_LEN  64
+#define SYSFS_VALUE_LEN      16
+/* Path buffer: dir + "/" + name + "/max_brightness" + null */
+#define PATH_BUFFER_LEN      (sizeof(SYSFS_BACKLIGHT_DIR) + 1 + MAX_DEVICE_NAME_LEN + 16)
+
+/* Compile-time buffer safety checks */
+_Static_assert(PATH_BUFFER_LEN >= sizeof(SYSFS_BACKLIGHT_DIR) + 1 + MAX_DEVICE_NAME_LEN + sizeof("/max_brightness"),
+               "PATH_BUFFER_LEN too small for backlight paths");
+_Static_assert(PATH_BUFFER_LEN >= sizeof(DEV_INPUT_DIR) + 1 + MAX_DEVICE_NAME_LEN,
+               "PATH_BUFFER_LEN too small for input paths");
+
+/* ============================================================
  * SECTION: Type Definitions
  * ============================================================ */
 
@@ -59,9 +80,9 @@ typedef struct {
     int brightness;
     int timeout_sec;
     int dim_percent;
-    char backlight[64];
-    char device[64];
-} config_t;
+    char backlight[MAX_DEVICE_NAME_LEN];
+    char device[MAX_DEVICE_NAME_LEN];
+} config_s;
 
 /* ============================================================
  * SECTION: Global State
@@ -76,6 +97,7 @@ static bool g_verbose = false;
  * ============================================================ */
 
 #define log_info(fmt, ...)    fprintf(stderr, "INFO: " fmt "\n", ##__VA_ARGS__)
+#define log_warn(fmt, ...)    fprintf(stderr, "WARN: " fmt "\n", ##__VA_ARGS__)
 #define log_err(fmt, ...)     fprintf(stderr, "ERROR: " fmt "\n", ##__VA_ARGS__)
 #define log_verbose(fmt, ...) do { if (g_verbose) fprintf(stderr, "DEBUG: " fmt "\n", ##__VA_ARGS__); } while(0)
 
@@ -87,6 +109,18 @@ static uint32_t now_ms(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+}
+
+/* Parse integer from string, returns -1 on error */
+static int parse_int(const char *str, int *out) {
+    char *end;
+    errno = 0;
+    long val = strtol(str, &end, 10);
+    if (end == str || *end != '\0' || errno == ERANGE ||
+        val < INT_MIN || val > INT_MAX)
+        return -1;
+    *out = (int)val;
+    return 0;
 }
 
 /* ============================================================
@@ -118,12 +152,12 @@ static bool validate_device_name(const char *name) {
     if (strchr(name, '/') != NULL || strstr(name, "..") != NULL)
         return false;
     size_t len = strlen(name);
-    if (len == 0 || len >= 64)
+    if (len == 0 || len >= MAX_DEVICE_NAME_LEN)
         return false;
     return true;
 }
 
-static void parse_args(int argc, char **argv, config_t *cfg) {
+static void parse_args(int argc, char **argv, config_s *cfg) {
     static const struct option long_options[] = {
         {"brightness",  required_argument, 0, 'b'},
         {"timeout",     required_argument, 0, 't'},
@@ -140,57 +174,66 @@ static void parse_args(int argc, char **argv, config_t *cfg) {
     while ((opt = getopt_long(argc, argv, "b:t:d:l:i:vVh", long_options, NULL)) != -1) {
         switch (opt) {
             case 'b':
-                cfg->brightness = atoi(optarg);
+                if (parse_int(optarg, &cfg->brightness) < 0) {
+                    log_err("Invalid brightness: %s", optarg);
+                    exit(EXIT_FAILURE);
+                }
                 break;
             case 't':
-                cfg->timeout_sec = atoi(optarg);
+                if (parse_int(optarg, &cfg->timeout_sec) < 0) {
+                    log_err("Invalid timeout: %s", optarg);
+                    exit(EXIT_FAILURE);
+                }
                 break;
             case 'd':
-                cfg->dim_percent = atoi(optarg);
+                if (parse_int(optarg, &cfg->dim_percent) < 0) {
+                    log_err("Invalid dim-percent: %s", optarg);
+                    exit(EXIT_FAILURE);
+                }
                 break;
             case 'l':
                 if (!validate_device_name(optarg)) {
-                    fprintf(stderr, "Invalid backlight name: %s\n", optarg);
-                    exit(1);
+                    log_err("Invalid backlight name: %s", optarg);
+                    exit(EXIT_FAILURE);
                 }
-                strncpy(cfg->backlight, optarg, sizeof(cfg->backlight) - 1);
+                snprintf(cfg->backlight, sizeof(cfg->backlight), "%s", optarg);
                 break;
             case 'i':
                 if (!validate_device_name(optarg)) {
-                    fprintf(stderr, "Invalid input device name: %s\n", optarg);
-                    exit(1);
+                    log_err("Invalid input device name: %s", optarg);
+                    exit(EXIT_FAILURE);
                 }
-                strncpy(cfg->device, optarg, sizeof(cfg->device) - 1);
+                snprintf(cfg->device, sizeof(cfg->device), "%s", optarg);
                 break;
             case 'v':
                 g_verbose = true;
                 break;
             case 'V':
                 printf("touch-timeout %s\n", VERSION_STRING);
-                exit(0);
+                exit(EXIT_SUCCESS);
             case 'h':
                 usage(argv[0]);
-                exit(0);
+                exit(EXIT_SUCCESS);
             default:
                 usage(argv[0]);
-                exit(1);
+                exit(EXIT_FAILURE);
         }
     }
 
     /* Validate ranges - use defaults for out-of-range values */
     if (cfg->brightness < MIN_BRIGHTNESS || cfg->brightness > MAX_BRIGHTNESS) {
-        fprintf(stderr, "Warning: brightness %d out of range (%d-%d), using default %d\n",
-                cfg->brightness, MIN_BRIGHTNESS, MAX_BRIGHTNESS, DEFAULT_BRIGHTNESS);
+        log_warn("brightness %d out of range (%d-%d), using default %d",
+                 cfg->brightness, MIN_BRIGHTNESS, MAX_BRIGHTNESS, DEFAULT_BRIGHTNESS);
         cfg->brightness = DEFAULT_BRIGHTNESS;
     }
     if (cfg->timeout_sec < MIN_TIMEOUT_SEC || cfg->timeout_sec > MAX_TIMEOUT_SEC) {
-        fprintf(stderr, "Warning: timeout %d out of range (%d-%d), using default %d\n",
-                cfg->timeout_sec, MIN_TIMEOUT_SEC, MAX_TIMEOUT_SEC, DEFAULT_TIMEOUT_SEC);
+        log_warn("timeout %d out of range (%d-%d), using default %d",
+                 cfg->timeout_sec, MIN_TIMEOUT_SEC, MAX_TIMEOUT_SEC, DEFAULT_TIMEOUT_SEC);
         cfg->timeout_sec = DEFAULT_TIMEOUT_SEC;
     }
     if (cfg->dim_percent < MIN_DIM_PERCENT || cfg->dim_percent > MAX_DIM_PERCENT) {
-        fprintf(stderr, "Warning: dim-percent %d out of range (%d-%d), using default %d\n",
-                cfg->dim_percent, MIN_DIM_PERCENT, MAX_DIM_PERCENT, DEFAULT_DIM_PERCENT);
+        log_warn("dim-percent %d out of range (%d-%d), using default %d",
+                 cfg->dim_percent, MIN_DIM_PERCENT, MAX_DIM_PERCENT, DEFAULT_DIM_PERCENT);
         cfg->dim_percent = DEFAULT_DIM_PERCENT;
     }
 }
@@ -200,8 +243,8 @@ static void parse_args(int argc, char **argv, config_t *cfg) {
  * ============================================================ */
 
 static int open_backlight(const char *name) {
-    char path[128];
-    snprintf(path, sizeof(path), "/sys/class/backlight/%s/brightness", name);
+    char path[PATH_BUFFER_LEN];
+    snprintf(path, sizeof(path), "%s/%s/brightness", SYSFS_BACKLIGHT_DIR, name);
 
     int fd = open(path, O_RDWR);
     if (fd < 0) {
@@ -212,26 +255,39 @@ static int open_backlight(const char *name) {
 }
 
 static int get_max_brightness(const char *name) {
-    char path[128];
-    snprintf(path, sizeof(path), "/sys/class/backlight/%s/max_brightness", name);
+    char path[PATH_BUFFER_LEN];
+    snprintf(path, sizeof(path), "%s/%s/max_brightness", SYSFS_BACKLIGHT_DIR, name);
 
     int fd = open(path, O_RDONLY);
-    if (fd < 0)
-        return MAX_BRIGHTNESS;  /* Assume 255 if can't read */
+    if (fd < 0) {
+        log_err("Cannot read %s: %s (assuming max=%d)", path, strerror(errno), MAX_BRIGHTNESS);
+        return MAX_BRIGHTNESS;
+    }
 
-    char buf[16];
+    char buf[SYSFS_VALUE_LEN];
     ssize_t n = read(fd, buf, sizeof(buf) - 1);
     close(fd);
 
-    if (n <= 0)
+    if (n <= 0) {
+        log_err("Empty read from %s (assuming max=%d)", path, MAX_BRIGHTNESS);
         return MAX_BRIGHTNESS;
+    }
 
     buf[n] = '\0';
-    return atoi(buf);
+    /* Trim trailing whitespace (sysfs includes newline) */
+    while (n > 0 && (buf[n-1] == '\n' || buf[n-1] == ' '))
+        buf[--n] = '\0';
+
+    int val;
+    if (parse_int(buf, &val) < 0 || val <= 0) {
+        log_err("Invalid max_brightness '%s' (assuming max=%d)", buf, MAX_BRIGHTNESS);
+        return MAX_BRIGHTNESS;
+    }
+    return val;
 }
 
 static int set_brightness(int fd, int value) {
-    char buf[16];
+    char buf[SYSFS_VALUE_LEN];
     int len = snprintf(buf, sizeof(buf), "%d", value);
 
     if (lseek(fd, 0, SEEK_SET) < 0) {
@@ -249,8 +305,8 @@ static int set_brightness(int fd, int value) {
 }
 
 static int open_input(const char *name) {
-    char path[128];
-    snprintf(path, sizeof(path), "/dev/input/%s", name);
+    char path[PATH_BUFFER_LEN];
+    snprintf(path, sizeof(path), "%s/%s", DEV_INPUT_DIR, name);
 
     int fd = open(path, O_RDONLY | O_NONBLOCK);
     if (fd < 0) {
@@ -290,7 +346,7 @@ static void handle_signal(int sig) {
 
 int main(int argc, char *argv[]) {
     /* Initialize config with defaults */
-    config_t cfg = {
+    config_s cfg = {
         .brightness = DEFAULT_BRIGHTNESS,
         .timeout_sec = DEFAULT_TIMEOUT_SEC,
         .dim_percent = DEFAULT_DIM_PERCENT,
@@ -304,12 +360,12 @@ int main(int argc, char *argv[]) {
     /* Open devices (fail fast on error) */
     int bl_fd = open_backlight(cfg.backlight);
     if (bl_fd < 0)
-        return 1;
+        return EXIT_FAILURE;
 
     int input_fd = open_input(cfg.device);
     if (input_fd < 0) {
         close(bl_fd);
-        return 1;
+        return EXIT_FAILURE;
     }
 
     /* Clamp brightness to hardware max */
@@ -338,13 +394,18 @@ int main(int argc, char *argv[]) {
     }
 
     /* Initialize state machine */
-    state_t state;
+    state_s state;
     state_init(&state, cfg.brightness, dim_bright, dim_ms, off_ms);
 
     /* Set initial timestamp and brightness */
     uint32_t now = now_ms();
     state_touch(&state, now);
-    set_brightness(bl_fd, cfg.brightness);
+    if (set_brightness(bl_fd, cfg.brightness) < 0) {
+        log_err("Cannot set initial brightness - check permissions");
+        close(input_fd);
+        close(bl_fd);
+        return EXIT_FAILURE;
+    }
     int cached_brightness = cfg.brightness;
 
     /* Setup signals */
@@ -427,5 +488,5 @@ int main(int argc, char *argv[]) {
     close(input_fd);
     close(bl_fd);
 
-    return 0;
+    return EXIT_SUCCESS;
 }
