@@ -26,7 +26,7 @@ typedef struct {
     int brightness_dim;         /* Brightness for DIMMED state */
     uint32_t dim_timeout_ms;    /* Ms before FULL -> DIMMED */
     uint32_t off_timeout_ms;    /* Ms before DIMMED -> OFF */
-} state_t;
+} state_s;
 
 /*
  * Initialize state machine
@@ -34,7 +34,7 @@ typedef struct {
  * Sets state to STATE_FULL with last_touch_ms = 0
  * Caller should call state_touch() immediately with current time
  */
-void state_init(state_t *s, int brightness_full, int brightness_dim,
+void state_init(state_s *st, int brightness_full, int brightness_dim,
                 uint32_t dim_timeout_ms, uint32_t off_timeout_ms);
 
 /*
@@ -45,7 +45,7 @@ void state_init(state_t *s, int brightness_full, int brightness_dim,
  *
  * Returns: new brightness value, or -1 if no change
  */
-int state_touch(state_t *s, uint32_t now_ms);
+int state_touch(state_s *st, uint32_t now_ms);
 
 /*
  * Check for timeout transition
@@ -55,27 +55,27 @@ int state_touch(state_t *s, uint32_t now_ms);
  *
  * Returns: new brightness value, or -1 if no change
  */
-int state_timeout(state_t *s, uint32_t now_ms);
+int state_timeout(state_s *st, uint32_t now_ms);
 
 /*
  * Get ms until next transition
  *
  * Returns: ms until next state change, 0 if already due, -1 if none (OFF state)
  */
-int state_get_timeout_ms(const state_t *s, uint32_t now_ms);
+int state_get_timeout_ms(const state_s *st, uint32_t now_ms);
 
 /*
  * Get current brightness for state
  *
  * Returns: brightness value for current state
  */
-int state_get_brightness(const state_t *s);
+int state_get_brightness(const state_s *st);
 
 /*
  * Get current state
  *
  * Returns: current state enum value
  */
-state_e state_get_current(const state_t *s);
+state_e state_get_current(const state_s *st);
 
 #endif /* TOUCH_TIMEOUT_STATE_H */

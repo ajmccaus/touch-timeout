@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Current version:** 0.7
+**Current version:** 0.7.0
 
 ## Project Overview
 
@@ -122,8 +122,3 @@ See [INSTALLATION.md] for complete build instructions and test details.
 
 **State transitions:** FULL → DIMMED (at dim_percent timeout) → OFF (at off_timeout)
 
-## Technical Debt
-
-Known divergences from conventions to be fixed:
-
-- [ ] **Typedef naming**: `state_t`, `config_t` should be `state_s`, `config_s` per naming conventions above

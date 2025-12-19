@@ -31,7 +31,7 @@ Target: v0.7.0 — Architecture simplification
 
 ### Changed
 
-- **Architecture**: Simplified from 6 modules (~900 lines) to 2 modules (~370 lines)
+- **Architecture**: Simplified from 6 modules (~1,700 lines) to 2 modules (~600 lines)
   - `main.c`: CLI, device I/O, event loop
   - `state.c`: Pure state machine (no I/O, no time calls)
 - **CLI**: Named options via `getopt_long` (`-b`, `-t`, `-d`, etc.)
