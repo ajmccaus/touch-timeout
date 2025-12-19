@@ -34,8 +34,6 @@ touch or external signal (e.g., from shairport-sync).
 - Work with sensible defaults, no config file required
 - Minimal memory footprint, no steady-state dynamic allocation
 
-**Current Version:** v2.0.0 (to be refactored and re-released)
-
 ## Coding Standards and Best Practices
 
 This project follows production-ready embedded C daemon standards to ensure robust, maintainable, and robust code. Think DRY and self documenting. 
