@@ -98,8 +98,13 @@ This daemon manages **touchscreen timeout only**.
 
 **Contributing:** Before proposing features, consider: Does this solve a real problem for touchscreen users? Can it be done with SIGUSR1 or existing configuration?
 
-## Support Policy
-This is a learning project maintained in my spare time.
-- Bug reports: Welcomed with reproduction steps
-- Feature requests: Considered but not guaranteed
+## About This Project
+
+This is a learning project and case study in non-expert AI-assisted software development. It chronicles what happens when you use AI to build software without proper design specifications—and the lessons learned from untangling the result.
+
+See [PROJECT-HISTORY.md](doc/PROJECT-HISTORY.md) for the full story.
+
+**Support:**
+- Bug reports welcomed with reproduction steps
+- Feature requests considered but not guaranteed
 - PRs: No guarantees on response time

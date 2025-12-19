@@ -5,209 +5,114 @@ All notable changes to touch-timeout will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Project History
+
+This project serves as a case study in AI-assisted software development.
+
+**The experiment:** A non-expert developer using AI (Claude) to build embedded C software, learning software engineering principles along the way.
+
+**What happened:**
+- **v0.1–v0.3**: Early development using AI web interfaces (Claude, DeepSeek, Grok, ChatGPT) and GitHub direct editing. Produced working but messy code with no clear architecture.
+- **v0.4**: First attempt using Claude Code to refactor. With minimal direction and a messy codebase as context, Claude produced an over-engineered 6-module architecture (~900 lines) that worked but was difficult to maintain and full of inconsistencies.
+- **v0.5–v0.6**: Attempts to document and stabilize the mess. Documentation was written based on intended behavior, not verified implementation—leading to doc/implementation mismatches.
+- **v0.7**: Clean-slate rewrite prompting Claude Code to start from first principles and a new design specification. Simplified to 2 modules (~370 lines) with clear separation of concerns.
+
+**Lesson learned:** AI-assisted development without proper context engineering ("flying the plane while building it") produces technical debt faster than a human could alone. The fix: design specifications and implementation guides *before* delegating to AI.
+
+See [PROJECT-HISTORY.md](doc/PROJECT-HISTORY.md) for the full case study.
+
+> **Note:** Version scheme was corrected in December 2025. Previous tags v1.0.0 and v2.0.0 were renamed to v0.3.0 and v0.4.0 respectively. v1.0.0 is reserved for the first stable production release.
+
+---
+
 ## [Unreleased]
+
+Target: v0.7.0 — Architecture simplification
 
 ### Changed
 
 - **Architecture**: Simplified from 6 modules (~900 lines) to 2 modules (~370 lines)
-  - `main.c`: CLI, device I/O, event loop (all inlined)
+  - `main.c`: CLI, device I/O, event loop
   - `state.c`: Pure state machine (no I/O, no time calls)
-- **CLI**: Replaced positional args with `getopt_long` named options (`-b`, `-t`, `-d`, etc.)
-- **Timer**: Single `poll()` timeout replaces `timerfd` (simpler, same performance)
-- **Clock**: Consistent `CLOCK_MONOTONIC` via caller-provided timestamps (was mixed clocks)
-- **State machine**: Pure implementation - caller passes `now_ms`, no `time()` or `syslog()` calls
-- **Build flags**: `-std=c99 -D_GNU_SOURCE` (was `-std=c17 -D_POSIX_C_SOURCE`)
+- **CLI**: Named options via `getopt_long` (`-b`, `-t`, `-d`, etc.)
+- **Timer**: Single `poll()` timeout replaces `timerfd`
+- **State machine**: Pure implementation—caller passes timestamps
 
 ### Added
 
-- **SIGUSR1 wake**: External programs can wake display via `pkill -USR1 touch-timeout`
-- **Foreground mode**: `-f` flag for development/debugging (logs to stderr)
-- **Verbose mode**: `-v` flag for detailed logging (state transitions)
-- **Version flag**: `-V` shows version
+- **SIGUSR1 wake**: External programs can wake display
+- **Foreground mode**: `-f` flag for debugging
+- **Verbose mode**: `-v` flag for state transition logging
 
 ### Removed
 
-- **Config file**: No longer reads `/etc/touch-timeout.conf` (CLI-only configuration)
-- **timerfd**: Replaced with single `poll()` timeout
-- **Modules**: Deleted `config.c/h`, `display.c/h`, `input.c/h`, `timer.c/h`
-- **Tests**: Removed `test_config.c` and `tests/mocks/` (no longer needed)
-
-## [2.0.0] - 2025-12-11
-
-Complete architectural refactoring from monolithic to modular design with enhanced security, testing, and user experience improvements.
-
-### Breaking Changes
-
-**Configuration Parameters:**
-
-1. **`poll_interval` removed** - No longer needed with event-driven architecture
-   - v1.0.0: Used 100ms polling by default
-   - v2.0.0: Uses POSIX `timerfd` with `poll()` for event-driven I/O (zero CPU when idle)
-   - **Migration:** Remove `poll_interval` from config files
-
-2. **`dim_percent` default changed: 50 → 10**
-   - v1.0.0: Screen dimmed at 50% of timeout (e.g., 150s if `off_timeout=300`)
-   - v2.0.0: Screen dims at 10% of timeout (e.g., 30s if `off_timeout=300`)
-   - **Rationale:** Keeps display at full brightness longer; dim serves as brief warning before screen-off
-   - **Migration:** Add `dim_percent=50` to config file to preserve v1.0.0 behavior
-
-3. **`brightness` default changed: 100 → 150**
-   - v1.0.0: Default brightness 100
-   - v2.0.0: Default brightness 150 (brighter default for better visibility)
-   - **Migration:** Add `brightness=100` to config file to preserve v1.0.0 behavior
-
-4. **`dim_percent` minimum changed: 10% → 1%**
-   - v1.0.0: Minimum `dim_percent=10` (screen dims at 10% of timeout)
-   - v2.0.0: Minimum `dim_percent=1` (allows finer control)
-   - **Migration:** No action required unless using edge-case values
-
-**Installation Changes:**
-
-5. **No default config file installed**
-   - v1.0.0: Installed `/etc/touch-timeout.conf` with defaults
-   - v2.0.0: Zero-config operation (uses compiled-in defaults, graceful fallback if config invalid)
-   - **Migration:** Config file is optional; daemon runs without it
-
-**Code Structure (Contributors Only):**
-
-6. **Modular architecture**
-   - v1.0.0: Single 594-line `touch-timeout.c`
-   - v2.0.0: 6 independent modules (`src/main.c`, `src/state.c`, `src/config.c`, etc.)
-   - **Migration:** Update build scripts to use new Makefile targets
-
-### Added
-
-**New Features:**
-- Event-driven I/O using `timerfd_create()` with `CLOCK_MONOTONIC` (immune to NTP/suspend issues)
-- Graceful configuration fallback (invalid values → log warning + use defaults, daemon continues)
-- `config_set_value()` API for runtime configuration with validation
-- Brightness caching in display HAL (~90% reduction in sysfs writes)
-- Optional systemd notify/watchdog support (requires libsystemd at build time)
-- Comprehensive unit tests: 65 tests across state machine and config modules
-- Hardware performance testing script (`scripts/test-performance.sh`)
-- Cross-compilation support for ARM32/ARM64 targets
-- Remote deployment workflow with automatic service installation
-
-**Security Enhancements:**
-- CERT C compliance: INT31-C, INT32-C, FIO32-C, SIG31-C, STR31-C, ERR06-C
-- CLI argument validation now uses table-driven config parser (prevents bypass)
-- Path traversal protection for device paths
-- Integer overflow protection in timeout calculations
-- Signal-safe handler implementation
-
-**Documentation:**
-- [ARCHITECTURE.md](doc/ARCHITECTURE.md) - Complete technical reference
-- [INSTALLATION.md](doc/INSTALLATION.md) - Comprehensive installation guide (direct + remote methods)
-- Improved [README.md](README.md) with quick-start examples
-- Project-specific [CLAUDE.md](CLAUDE.md) for AI-assisted development
-
-### Changed
-
-**Performance:**
-- CPU usage (idle): 0.08% → <0.05%
-- Memory footprint: ~0.2 MB RSS (similar to v1.0.0)
-- Touch response latency: <200ms (improved from v1.0.0)
-- SD card I/O: ~90% reduction via brightness caching + `LogLevelMax=info` (filters DEBUG)
-
-**Deployment:**
-- Staging directory: `/tmp/` → `/run/touch-timeout-staging/` (guaranteed tmpfs)
-- Service auto-install enabled by default (`--manual` flag to opt-out)
-- Install script enables systemd service on boot
-
-**Build System:**
-- Build directory: `build/native/`, `build/arm32/`, `build/arm64/`
-- C standard: C11 → C17 with POSIX.1-2008
-- Test coverage: `make coverage` generates lcov reports
-- Separate test executables per module
-
-### Fixed
-
-- System time changes no longer affect timeouts (uses `CLOCK_MONOTONIC`)
-- Suspend/resume cycles handled correctly
-- Config validation bypass via CLI arguments (now validated)
-- Makefile install path bug (staging directory mismatch)
-- Service not enabled on boot after installation
-- Runtime log messages now use `LOG_DEBUG` (filtered by default via systemd `LogLevelMax=info`)
-
-### Removed
-
-- `poll_interval` configuration parameter (obsolete with event-driven architecture)
-- Default config file installation (zero-config operation)
-- `assert()` calls in production code paths (graceful error handling)
-- Unnecessary `fsync()` on sysfs writes
+- **Config file support**: CLI-only configuration
+- **Modules**: `config.c/h`, `display.c/h`, `input.c/h`, `timer.c/h`
 
 ---
 
-## [1.0.0] - 2024-12-06
+## [0.6.0] - 2025-12-19
 
-Initial release.
+Documentation reorganization and deployment workflow improvements.
+
+### Changed
+
+- Reorganized documentation into `doc/` directory
+- Split ARCHITECTURE.md (descriptive) from DESIGN.md (prescriptive)
+- Simplified build/deploy workflow
+
+### Fixed
+
+- Broken documentation links
+- Metric inconsistencies in documentation
+
+---
+
+## [0.5.0] - 2025-12-12
+
+Performance verification UX and documentation cleanup.
+
+### Changed
+
+- Simplified test scripts with better UX (progress indicators, clearer output)
+- Fixed documentation inconsistencies
+
+---
+
+## [0.4.0] - 2025-12-11
+
+Major refactoring attempt. (Previously tagged as v2.0.0)
+Started 2025-11-26
+
+**Note:** This version was over-engineered due to insufficient design guidance during AI-assisted refactoring. Documentation may not accurately reflect the implementation. See Project History above.
+
+### Changed
+
+- Refactored from single-file to 6-module architecture
+- Switched from polling to event-driven I/O (`timerfd` + `poll`)
+- Added unit test framework
+
+### Added
+
+- Cross-compilation support (ARM32/ARM64)
+- Remote deployment scripts
+- Configuration file support
+
+---
+
+## [0.3.0] - 2024-11-12
+
+Initial feature-complete release. (Previously tagged as v1.0.0)
 
 ### Features
 
 - Automatic touchscreen backlight dimming and power-off
 - Touch-to-wake functionality
-- Configurable timeouts and brightness levels
+- Configurable timeouts and brightness
 - Systemd service integration
-- RPi 7" touchscreen support
-- Single-file monolithic implementation (594 lines)
-- Configuration via `/etc/touch-timeout.conf`
-- Poll-based event loop (100ms default interval)
 
 ---
 
-## Migration Guide: v1.0.x → v2.0.0
+## [0.2.0] - 2024-11-14
 
-### Quick Migration (Most Users)
-
-**No action required** - v2.0.0 runs with zero configuration. Defaults are sensible for most use cases.
-
-### Preserving v1.0.0 Behavior
-
-If you want v1.0.0 behavior, create `/etc/touch-timeout.conf`:
-
-```ini
-# Restore v1.0.0 defaults
-brightness=100
-dim_percent=50
-```
-
-**Note:** Do NOT add `poll_interval` - this parameter is obsolete in v2.0.0.
-
-### For Contributors/Developers
-
-**Build System Changes:**
-```bash
-# v1.0.0
-make                    # Build touch-timeout
-make test               # Run tests
-
-# v2.0.0
-make                    # Build build/native/touch-timeout
-make test               # Run all unit tests
-make coverage           # Generate coverage report
-make arm32              # Cross-compile for ARM32
-make arm64              # Cross-compile for ARM64
-```
-
-**Testing Changes:**
-- v1.0.0: 1 test file (48 tests)
-- v2.0.0: Modular tests (65 tests), `tests/test_config`, `tests/test_state`
-
-**Deployment Changes:**
-```bash
-# v1.0.0
-scp touch-timeout root@IP:/usr/local/bin/
-scp touch-timeout.service root@IP:/etc/systemd/system/
-
-# v2.0.0 (automated)
-make arm32 && scripts/deploy-arm.sh root@IP
-```
-
-See [INSTALLATION.md](doc/INSTALLATION.md) for complete deployment documentation.
-
----
-
-## Version History
-
-- **v2.0.0** (2025-12-11): Modular architecture, event-driven I/O, enhanced security
-- **v1.0.0** (2024-12-06): Initial release
+Early development release.
