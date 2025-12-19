@@ -1,108 +1,81 @@
 /*
- * state.h
- * -------
- * Display power state machine - pure logic, no I/O
+ * state.h - Pure state machine for display power management
  *
- * Three-state machine: FULL -> DIMMED -> OFF
- * Handles timeout calculations and state transitions
- * Completely testable without hardware
+ * Three-state Moore machine: FULL -> DIMMED -> OFF
+ * Pure logic only - no I/O, no time calls
+ * Caller provides timestamps from CLOCK_MONOTONIC
  */
 
 #ifndef TOUCH_TIMEOUT_STATE_H
 #define TOUCH_TIMEOUT_STATE_H
 
-#include <time.h>
-#include <stdbool.h>
+#include <stdint.h>
 
 /* Display power states */
 typedef enum {
-    STATE_FULL = 0,      /* Full brightness - active use */
-    STATE_DIMMED = 1,    /* Dimmed - user inactive */
-    STATE_OFF = 2        /* Screen off - power saving */
-} state_type_t;
-
-/* State machine events */
-typedef enum {
-    STATE_EVENT_TOUCH,   /* Touch input detected */
-    STATE_EVENT_TIMEOUT  /* Timer expired - check for state change */
-} state_event_t;
+    STATE_FULL = 0,    /* Full brightness - active use */
+    STATE_DIMMED = 1,  /* Dimmed - user inactive */
+    STATE_OFF = 2      /* Screen off - power saving */
+} state_e;
 
 /* State machine context */
 typedef struct {
-    state_type_t current_state;     /* Current state */
-    int user_brightness;            /* Full brightness value */
-    int dim_brightness;             /* Dimmed brightness value */
-    int dim_timeout_sec;            /* Seconds before dimming */
-    int off_timeout_sec;            /* Seconds before turning off */
-    time_t last_input_time;         /* Timestamp of last touch (CLOCK_REALTIME for compatibility) */
+    state_e state;              /* Current state */
+    uint32_t last_touch_ms;     /* Timestamp of last touch (monotonic ms) */
+    int brightness_full;        /* Brightness for FULL state */
+    int brightness_dim;         /* Brightness for DIMMED state */
+    uint32_t dim_timeout_ms;    /* Ms before FULL -> DIMMED */
+    uint32_t off_timeout_ms;    /* Ms before DIMMED -> OFF */
 } state_t;
 
 /*
  * Initialize state machine
  *
- * Sets initial state to STATE_FULL
- * Records current time as last input
- *
- * Parameters:
- *   state:            State structure to initialize
- *   user_brightness:  Brightness for FULL state
- *   dim_brightness:   Brightness for DIMMED state
- *   dim_timeout_sec:  Seconds before dimming
- *   off_timeout_sec:  Seconds before turning off
- *
- * Returns: 0 on success, -1 on error (invalid parameters)
+ * Sets state to STATE_FULL with last_touch_ms = 0
+ * Caller should call state_touch() immediately with current time
  */
-int state_init(state_t *state, int user_brightness, int dim_brightness,
-               int dim_timeout_sec, int off_timeout_sec);
+void state_init(state_t *s, int brightness_full, int brightness_dim,
+                uint32_t dim_timeout_ms, uint32_t off_timeout_ms);
 
 /*
- * Handle state machine event
+ * Handle touch event
  *
- * Processes touch events and timeout checks
- * Returns new brightness if state changed
+ * Updates last_touch_ms to now_ms
+ * Transitions to STATE_FULL if not already there
  *
- * Parameters:
- *   state:            State machine context
- *   event:            Event type (TOUCH or TIMEOUT)
- *   new_brightness:   Output - new brightness value if state changed
- *
- * Returns: true if brightness should change, false if no change
+ * Returns: new brightness value, or -1 if no change
  */
-bool state_handle_event(state_t *state, state_event_t event, int *new_brightness);
+int state_touch(state_t *s, uint32_t now_ms);
+
+/*
+ * Check for timeout transition
+ *
+ * Checks if idle time has exceeded threshold for current state
+ * Transitions: FULL -> DIMMED -> OFF
+ *
+ * Returns: new brightness value, or -1 if no change
+ */
+int state_timeout(state_t *s, uint32_t now_ms);
+
+/*
+ * Get ms until next transition
+ *
+ * Returns: ms until next state change, 0 if already due, -1 if none (OFF state)
+ */
+int state_get_timeout_ms(const state_t *s, uint32_t now_ms);
+
+/*
+ * Get current brightness for state
+ *
+ * Returns: brightness value for current state
+ */
+int state_get_brightness(const state_t *s);
 
 /*
  * Get current state
  *
- * Parameters:
- *   state: State machine context
- *
- * Returns: Current state
+ * Returns: current state enum value
  */
-state_type_t state_get_current(const state_t *state);
-
-/*
- * Get current target brightness
- *
- * Returns brightness value for current state
- *
- * Parameters:
- *   state: State machine context
- *
- * Returns: Brightness value
- */
-int state_get_brightness(const state_t *state);
-
-/*
- * Get seconds until next state transition
- *
- * Calculates time remaining until next dim or off event
- * Returns 0 if already past timeout (state change needed)
- *
- * Parameters:
- *   state: State machine context
- *
- * Returns: Seconds until next state change, or -1 if no timeout
- */
-int state_get_next_timeout(const state_t *state);
+state_e state_get_current(const state_t *s);
 
 #endif /* TOUCH_TIMEOUT_STATE_H */

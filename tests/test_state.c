@@ -1,22 +1,12 @@
 /*
- * test_state.c
- * ------------
- * Unit tests for state machine module
+ * test_state.c - Unit tests for pure state machine
  *
- * Tests pure logic without hardware dependencies:
- * - State initialization
- * - Touch event handling
- * - Timeout event handling
- * - State transitions (FULL -> DIMMED -> OFF)
- * - Clock adjustment handling
+ * Tests are simple - no mocking needed, just pass timestamps
  */
 
-#include "state.h"
+#include "../src/state.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <assert.h>
-#include <unistd.h>
 
 /* Test framework */
 static int tests_run = 0;
@@ -25,7 +15,7 @@ static int tests_failed = 0;
 
 #define TEST(name) static void name(void)
 #define RUN_TEST(name) do { \
-    printf("  %-60s ", #name); \
+    printf("  %-55s ", #name); \
     fflush(stdout); \
     tests_run++; \
     name(); \
@@ -37,338 +27,348 @@ static int tests_failed = 0;
     if (!(cond)) { \
         printf("FAIL\n    %s:%d: %s\n", __FILE__, __LINE__, #cond); \
         tests_failed++; \
+        tests_passed--;  /* Undo increment from RUN_TEST */ \
         return; \
     } \
 } while(0)
 
 #define ASSERT_EQ(a, b) ASSERT_TRUE((a) == (b))
-#define ASSERT_FALSE(cond) ASSERT_TRUE(!(cond))
+
+/* Test config: dim at 5000ms, off at 10000ms, full=100, dim=10 */
+#define BRIGHT_FULL 100
+#define BRIGHT_DIM  10
+#define DIM_MS      5000
+#define OFF_MS      10000
 
 /* ==================== INITIALIZATION TESTS ==================== */
 
-TEST(test_state_init_valid) {
-    state_t state;
-    int ret = state_init(&state, 100, 10, 150, 300);
+TEST(test_init_sets_full_state) {
+    state_t s;
+    state_init(&s, BRIGHT_FULL, BRIGHT_DIM, DIM_MS, OFF_MS);
 
-    ASSERT_EQ(ret, 0);
-    ASSERT_EQ(state.current_state, STATE_FULL);
-    ASSERT_EQ(state.user_brightness, 100);
-    ASSERT_EQ(state.dim_brightness, 10);
-    ASSERT_EQ(state.dim_timeout_sec, 150);
-    ASSERT_EQ(state.off_timeout_sec, 300);
+    ASSERT_EQ(s.state, STATE_FULL);
+    ASSERT_EQ(s.last_touch_ms, 0);
 }
 
-TEST(test_state_init_invalid_null) {
-    int ret = state_init(NULL, 100, 10, 150, 300);
-    ASSERT_EQ(ret, -1);
-}
+TEST(test_init_stores_config) {
+    state_t s;
+    state_init(&s, BRIGHT_FULL, BRIGHT_DIM, DIM_MS, OFF_MS);
 
-TEST(test_state_init_invalid_brightness) {
-    state_t state;
-    int ret = state_init(&state, 0, 10, 150, 300);
-    ASSERT_EQ(ret, -1);
-}
-
-TEST(test_state_init_invalid_timeout) {
-    state_t state;
-    int ret = state_init(&state, 100, 10, 0, 300);
-    ASSERT_EQ(ret, -1);
-}
-
-TEST(test_state_init_invalid_timeout_order) {
-    state_t state;
-    /* dim_timeout >= off_timeout is invalid */
-    int ret = state_init(&state, 100, 10, 300, 300);
-    ASSERT_EQ(ret, -1);
+    ASSERT_EQ(s.brightness_full, BRIGHT_FULL);
+    ASSERT_EQ(s.brightness_dim, BRIGHT_DIM);
+    ASSERT_EQ(s.dim_timeout_ms, DIM_MS);
+    ASSERT_EQ(s.off_timeout_ms, OFF_MS);
 }
 
 /* ==================== TOUCH EVENT TESTS ==================== */
 
-TEST(test_state_touch_when_full) {
-    state_t state;
-    state_init(&state, 100, 10, 150, 300);
+TEST(test_touch_when_full_no_change) {
+    state_t s;
+    state_init(&s, BRIGHT_FULL, BRIGHT_DIM, DIM_MS, OFF_MS);
+    state_touch(&s, 1000);  /* Initial touch */
 
-    int new_brightness;
-    bool changed = state_handle_event(&state, STATE_EVENT_TOUCH, &new_brightness);
+    int brightness = state_touch(&s, 2000);
 
-    /* Touch when already FULL should not change brightness */
-    ASSERT_FALSE(changed);
-    ASSERT_EQ(state.current_state, STATE_FULL);
+    ASSERT_EQ(brightness, -1);  /* No change */
+    ASSERT_EQ(s.state, STATE_FULL);
+    ASSERT_EQ(s.last_touch_ms, 2000);
 }
 
-TEST(test_state_touch_restores_from_dimmed) {
-    state_t state;
-    state_init(&state, 100, 10, 5, 10);
+TEST(test_touch_from_dimmed_returns_full) {
+    state_t s;
+    state_init(&s, BRIGHT_FULL, BRIGHT_DIM, DIM_MS, OFF_MS);
+    state_touch(&s, 0);
+    state_timeout(&s, 6000);  /* Transition to DIMMED */
 
-    /* Simulate dimming by going back in time */
-    state.last_input_time -= 6;
-    state.current_state = STATE_DIMMED;
+    int brightness = state_touch(&s, 7000);
 
-    int new_brightness;
-    bool changed = state_handle_event(&state, STATE_EVENT_TOUCH, &new_brightness);
-
-    ASSERT_TRUE(changed);
-    ASSERT_EQ(new_brightness, 100);
-    ASSERT_EQ(state.current_state, STATE_FULL);
+    ASSERT_EQ(brightness, BRIGHT_FULL);
+    ASSERT_EQ(s.state, STATE_FULL);
 }
 
-TEST(test_state_touch_restores_from_off) {
-    state_t state;
-    state_init(&state, 100, 10, 5, 10);
+TEST(test_touch_from_off_returns_full) {
+    state_t s;
+    state_init(&s, BRIGHT_FULL, BRIGHT_DIM, DIM_MS, OFF_MS);
+    state_touch(&s, 0);
+    state_timeout(&s, 6000);   /* FULL -> DIMMED */
+    state_timeout(&s, 11000);  /* DIMMED -> OFF */
 
-    /* Simulate screen off */
-    state.last_input_time -= 15;
-    state.current_state = STATE_OFF;
+    int brightness = state_touch(&s, 12000);
 
-    int new_brightness;
-    bool changed = state_handle_event(&state, STATE_EVENT_TOUCH, &new_brightness);
+    ASSERT_EQ(brightness, BRIGHT_FULL);
+    ASSERT_EQ(s.state, STATE_FULL);
+}
 
-    ASSERT_TRUE(changed);
-    ASSERT_EQ(new_brightness, 100);
-    ASSERT_EQ(state.current_state, STATE_FULL);
+TEST(test_touch_updates_timestamp) {
+    state_t s;
+    state_init(&s, BRIGHT_FULL, BRIGHT_DIM, DIM_MS, OFF_MS);
+
+    state_touch(&s, 5000);
+    ASSERT_EQ(s.last_touch_ms, 5000);
+
+    state_touch(&s, 8000);
+    ASSERT_EQ(s.last_touch_ms, 8000);
 }
 
 /* ==================== TIMEOUT EVENT TESTS ==================== */
 
-TEST(test_state_timeout_stays_full_when_active) {
-    state_t state;
-    state_init(&state, 100, 10, 150, 300);
+TEST(test_timeout_before_dim_no_change) {
+    state_t s;
+    state_init(&s, BRIGHT_FULL, BRIGHT_DIM, DIM_MS, OFF_MS);
+    state_touch(&s, 0);
 
-    /* Just initialized - should stay FULL */
-    int new_brightness;
-    bool changed = state_handle_event(&state, STATE_EVENT_TIMEOUT, &new_brightness);
+    int brightness = state_timeout(&s, 4000);  /* 4s, dim at 5s */
 
-    ASSERT_FALSE(changed);
-    ASSERT_EQ(state.current_state, STATE_FULL);
+    ASSERT_EQ(brightness, -1);
+    ASSERT_EQ(s.state, STATE_FULL);
 }
 
-TEST(test_state_timeout_dims_after_dim_timeout) {
-    state_t state;
-    state_init(&state, 100, 10, 5, 10);
+TEST(test_timeout_at_dim_transitions) {
+    state_t s;
+    state_init(&s, BRIGHT_FULL, BRIGHT_DIM, DIM_MS, OFF_MS);
+    state_touch(&s, 0);
 
-    /* Go back in time to simulate idle period */
-    state.last_input_time -= 6;
+    int brightness = state_timeout(&s, 5000);  /* Exactly at dim */
 
-    int new_brightness;
-    bool changed = state_handle_event(&state, STATE_EVENT_TIMEOUT, &new_brightness);
-
-    ASSERT_TRUE(changed);
-    ASSERT_EQ(new_brightness, 10);
-    ASSERT_EQ(state.current_state, STATE_DIMMED);
+    ASSERT_EQ(brightness, BRIGHT_DIM);
+    ASSERT_EQ(s.state, STATE_DIMMED);
 }
 
-TEST(test_state_timeout_turns_off_after_off_timeout) {
-    state_t state;
-    state_init(&state, 100, 10, 5, 10);
+TEST(test_timeout_at_off_transitions) {
+    state_t s;
+    state_init(&s, BRIGHT_FULL, BRIGHT_DIM, DIM_MS, OFF_MS);
+    state_touch(&s, 0);
+    state_timeout(&s, 5000);  /* FULL -> DIMMED */
 
-    /* Simulate being past off timeout */
-    state.last_input_time -= 15;
+    int brightness = state_timeout(&s, 10000);  /* Exactly at off */
 
-    int new_brightness;
-    bool changed = state_handle_event(&state, STATE_EVENT_TIMEOUT, &new_brightness);
-
-    ASSERT_TRUE(changed);
-    ASSERT_EQ(new_brightness, 0);
-    ASSERT_EQ(state.current_state, STATE_OFF);
+    ASSERT_EQ(brightness, 0);
+    ASSERT_EQ(s.state, STATE_OFF);
 }
 
-TEST(test_state_timeout_skips_dim_when_past_off) {
-    state_t state;
-    state_init(&state, 100, 10, 5, 10);
+TEST(test_timeout_in_off_no_change) {
+    state_t s;
+    state_init(&s, BRIGHT_FULL, BRIGHT_DIM, DIM_MS, OFF_MS);
+    state_touch(&s, 0);
+    state_timeout(&s, 6000);
+    state_timeout(&s, 11000);  /* Now OFF */
 
-    /* Start in FULL, but idle time is past off_timeout */
-    state.last_input_time -= 15;
-    state.current_state = STATE_FULL;
+    int brightness = state_timeout(&s, 20000);
 
-    int new_brightness;
-    bool changed = state_handle_event(&state, STATE_EVENT_TIMEOUT, &new_brightness);
-
-    /* Should go directly to OFF, skipping DIMMED */
-    ASSERT_TRUE(changed);
-    ASSERT_EQ(new_brightness, 0);
-    ASSERT_EQ(state.current_state, STATE_OFF);
+    ASSERT_EQ(brightness, -1);
+    ASSERT_EQ(s.state, STATE_OFF);
 }
 
-TEST(test_state_timeout_from_dimmed_to_off) {
-    state_t state;
-    state_init(&state, 100, 10, 5, 10);
+TEST(test_timeout_dimmed_to_off) {
+    state_t s;
+    state_init(&s, BRIGHT_FULL, BRIGHT_DIM, DIM_MS, OFF_MS);
+    state_touch(&s, 0);
+    state_timeout(&s, 6000);  /* Now DIMMED */
 
-    /* Simulate being dimmed and then waiting for off */
-    state.last_input_time -= 15;
-    state.current_state = STATE_DIMMED;
+    /* Wait more time */
+    int brightness = state_timeout(&s, 11000);
 
-    int new_brightness;
-    bool changed = state_handle_event(&state, STATE_EVENT_TIMEOUT, &new_brightness);
-
-    ASSERT_TRUE(changed);
-    ASSERT_EQ(new_brightness, 0);
-    ASSERT_EQ(state.current_state, STATE_OFF);
+    ASSERT_EQ(brightness, 0);
+    ASSERT_EQ(s.state, STATE_OFF);
 }
 
-/* ==================== CLOCK ADJUSTMENT TESTS ==================== */
+/* ==================== TIMEOUT CALCULATION TESTS ==================== */
 
-TEST(test_state_handles_clock_backwards) {
-    state_t state;
-    state_init(&state, 100, 10, 150, 300);
+TEST(test_get_timeout_from_full) {
+    state_t s;
+    state_init(&s, BRIGHT_FULL, BRIGHT_DIM, DIM_MS, OFF_MS);
+    state_touch(&s, 1000);
 
-    /* Simulate clock going backwards (NTP adjustment) */
-    state.last_input_time += 100;  /* 100 seconds in future */
+    int timeout = state_get_timeout_ms(&s, 2000);  /* 1s idle */
 
-    int new_brightness;
-    bool changed = state_handle_event(&state, STATE_EVENT_TIMEOUT, &new_brightness);
-
-    /* Should not change state, just reset timer */
-    ASSERT_FALSE(changed);
-    ASSERT_EQ(state.current_state, STATE_FULL);
-    /* Timer should be reset to approximately now */
-    ASSERT_TRUE(state.last_input_time <= time(NULL) + 1);
+    ASSERT_EQ(timeout, 4000);  /* 5000 - 1000 = 4000 */
 }
 
-/* ==================== GETTER TESTS ==================== */
+TEST(test_get_timeout_from_dimmed) {
+    state_t s;
+    state_init(&s, BRIGHT_FULL, BRIGHT_DIM, DIM_MS, OFF_MS);
+    state_touch(&s, 0);
+    state_timeout(&s, 6000);  /* DIMMED */
 
-TEST(test_state_get_current) {
-    state_t state;
-    state_init(&state, 100, 10, 150, 300);
+    int timeout = state_get_timeout_ms(&s, 7000);  /* 7s idle */
 
-    ASSERT_EQ(state_get_current(&state), STATE_FULL);
-
-    state.current_state = STATE_DIMMED;
-    ASSERT_EQ(state_get_current(&state), STATE_DIMMED);
-
-    state.current_state = STATE_OFF;
-    ASSERT_EQ(state_get_current(&state), STATE_OFF);
+    ASSERT_EQ(timeout, 3000);  /* 10000 - 7000 = 3000 */
 }
 
-TEST(test_state_get_brightness) {
-    state_t state;
-    state_init(&state, 100, 10, 150, 300);
+TEST(test_get_timeout_from_off) {
+    state_t s;
+    state_init(&s, BRIGHT_FULL, BRIGHT_DIM, DIM_MS, OFF_MS);
+    state_touch(&s, 0);
+    state_timeout(&s, 6000);
+    state_timeout(&s, 11000);  /* OFF */
 
-    state.current_state = STATE_FULL;
-    ASSERT_EQ(state_get_brightness(&state), 100);
+    int timeout = state_get_timeout_ms(&s, 15000);
 
-    state.current_state = STATE_DIMMED;
-    ASSERT_EQ(state_get_brightness(&state), 10);
-
-    state.current_state = STATE_OFF;
-    ASSERT_EQ(state_get_brightness(&state), 0);
+    ASSERT_EQ(timeout, -1);  /* No timeout in OFF */
 }
 
-TEST(test_state_get_next_timeout_from_full) {
-    state_t state;
-    state_init(&state, 100, 10, 150, 300);
+TEST(test_get_timeout_expired_returns_zero) {
+    state_t s;
+    state_init(&s, BRIGHT_FULL, BRIGHT_DIM, DIM_MS, OFF_MS);
+    state_touch(&s, 0);
 
-    /* Just initialized - should return dim_timeout */
-    int timeout = state_get_next_timeout(&state);
-    ASSERT_TRUE(timeout > 0);
-    ASSERT_TRUE(timeout <= 150);
+    int timeout = state_get_timeout_ms(&s, 6000);  /* Past dim */
+
+    ASSERT_EQ(timeout, 0);
 }
 
-TEST(test_state_get_next_timeout_from_dimmed) {
-    state_t state;
-    state_init(&state, 100, 10, 150, 300);
+/* ==================== BRIGHTNESS GETTER TESTS ==================== */
 
-    /* Simulate being dimmed */
-    state.last_input_time -= 160;  /* Past dim, not past off */
-    state.current_state = STATE_DIMMED;
+TEST(test_get_brightness_full) {
+    state_t s;
+    state_init(&s, BRIGHT_FULL, BRIGHT_DIM, DIM_MS, OFF_MS);
 
-    int timeout = state_get_next_timeout(&state);
-    ASSERT_TRUE(timeout > 0);
-    /* Allow for timing variance - should be around 140 seconds */
-    ASSERT_TRUE(timeout <= 300 - 160 + 1);  /* Allow 1 second variance */
+    ASSERT_EQ(state_get_brightness(&s), BRIGHT_FULL);
 }
 
-TEST(test_state_get_next_timeout_from_off) {
-    state_t state;
-    state_init(&state, 100, 10, 150, 300);
+TEST(test_get_brightness_dimmed) {
+    state_t s;
+    state_init(&s, BRIGHT_FULL, BRIGHT_DIM, DIM_MS, OFF_MS);
+    state_touch(&s, 0);
+    state_timeout(&s, 6000);
 
-    state.current_state = STATE_OFF;
-
-    /* No timeout when off - waiting for touch */
-    int timeout = state_get_next_timeout(&state);
-    ASSERT_EQ(timeout, -1);
+    ASSERT_EQ(state_get_brightness(&s), BRIGHT_DIM);
 }
 
-TEST(test_state_get_next_timeout_expired) {
-    state_t state;
-    state_init(&state, 100, 10, 150, 300);
+TEST(test_get_brightness_off) {
+    state_t s;
+    state_init(&s, BRIGHT_FULL, BRIGHT_DIM, DIM_MS, OFF_MS);
+    state_touch(&s, 0);
+    state_timeout(&s, 6000);
+    state_timeout(&s, 11000);
 
-    /* Simulate being past timeout */
-    state.last_input_time -= 400;
-
-    int timeout = state_get_next_timeout(&state);
-    ASSERT_EQ(timeout, 0);  /* Timeout already expired */
+    ASSERT_EQ(state_get_brightness(&s), 0);
 }
 
-/* ==================== STATE TRANSITION SEQUENCE TEST ==================== */
+/* ==================== STATE GETTER TESTS ==================== */
 
-TEST(test_state_full_sequence) {
-    state_t state;
-    state_init(&state, 100, 10, 5, 10);
+TEST(test_get_current_state) {
+    state_t s;
+    state_init(&s, BRIGHT_FULL, BRIGHT_DIM, DIM_MS, OFF_MS);
+    state_touch(&s, 0);
 
-    /* Verify initial state */
-    ASSERT_EQ(state.current_state, STATE_FULL);
+    ASSERT_EQ(state_get_current(&s), STATE_FULL);
 
-    /* Wait past dim timeout */
-    state.last_input_time -= 6;
-    int new_brightness;
-    bool changed = state_handle_event(&state, STATE_EVENT_TIMEOUT, &new_brightness);
-    ASSERT_TRUE(changed);
-    ASSERT_EQ(state.current_state, STATE_DIMMED);
-    ASSERT_EQ(new_brightness, 10);
+    state_timeout(&s, 6000);
+    ASSERT_EQ(state_get_current(&s), STATE_DIMMED);
 
-    /* Wait past off timeout */
-    state.last_input_time -= 5;  /* Total 11 seconds */
-    changed = state_handle_event(&state, STATE_EVENT_TIMEOUT, &new_brightness);
-    ASSERT_TRUE(changed);
-    ASSERT_EQ(state.current_state, STATE_OFF);
-    ASSERT_EQ(new_brightness, 0);
+    state_timeout(&s, 11000);
+    ASSERT_EQ(state_get_current(&s), STATE_OFF);
+}
 
-    /* Touch to restore */
-    changed = state_handle_event(&state, STATE_EVENT_TOUCH, &new_brightness);
-    ASSERT_TRUE(changed);
-    ASSERT_EQ(state.current_state, STATE_FULL);
-    ASSERT_EQ(new_brightness, 100);
+/* ==================== EDGE CASE TESTS ==================== */
+
+TEST(test_wraparound_handling) {
+    state_t s;
+    state_init(&s, BRIGHT_FULL, BRIGHT_DIM, DIM_MS, OFF_MS);
+
+    /* Touch near uint32_t max */
+    uint32_t near_max = 0xFFFFFFFF - 1000;
+    state_touch(&s, near_max);
+
+    /* 2s later wraps around */
+    uint32_t wrapped = near_max + 2000;  /* Wraps to ~998 */
+    int timeout = state_get_timeout_ms(&s, wrapped);
+
+    /* idle = wrapped - near_max = 2000, should be 3000 remaining */
+    ASSERT_EQ(timeout, 3000);
+}
+
+TEST(test_zero_idle_time) {
+    state_t s;
+    state_init(&s, BRIGHT_FULL, BRIGHT_DIM, DIM_MS, OFF_MS);
+    state_touch(&s, 5000);
+
+    int timeout = state_get_timeout_ms(&s, 5000);  /* Same time */
+
+    ASSERT_EQ(timeout, 5000);  /* Full dim timeout remaining */
+}
+
+/* ==================== FULL SEQUENCE TEST ==================== */
+
+TEST(test_full_lifecycle) {
+    state_t s;
+    state_init(&s, BRIGHT_FULL, BRIGHT_DIM, DIM_MS, OFF_MS);
+
+    /* Initial touch */
+    int b = state_touch(&s, 0);
+    ASSERT_EQ(b, -1);  /* Already FULL */
+    ASSERT_EQ(s.state, STATE_FULL);
+
+    /* Wait 3s - still FULL */
+    b = state_timeout(&s, 3000);
+    ASSERT_EQ(b, -1);
+    ASSERT_EQ(s.state, STATE_FULL);
+
+    /* Wait 6s total - transition to DIMMED */
+    b = state_timeout(&s, 6000);
+    ASSERT_EQ(b, BRIGHT_DIM);
+    ASSERT_EQ(s.state, STATE_DIMMED);
+
+    /* Wait 11s total - transition to OFF */
+    b = state_timeout(&s, 11000);
+    ASSERT_EQ(b, 0);
+    ASSERT_EQ(s.state, STATE_OFF);
+
+    /* Touch - restore to FULL */
+    b = state_touch(&s, 12000);
+    ASSERT_EQ(b, BRIGHT_FULL);
+    ASSERT_EQ(s.state, STATE_FULL);
+
+    /* Verify timer reset */
+    int timeout = state_get_timeout_ms(&s, 13000);
+    ASSERT_EQ(timeout, 4000);  /* 5000 - 1000 */
 }
 
 /* ==================== MAIN TEST RUNNER ==================== */
 
 int main(void) {
     printf("\n========================================\n");
-    printf("State Machine Module Unit Tests\n");
+    printf("State Machine Unit Tests (Pure API)\n");
     printf("========================================\n\n");
 
-    printf("Initialization tests:\n");
-    RUN_TEST(test_state_init_valid);
-    RUN_TEST(test_state_init_invalid_null);
-    RUN_TEST(test_state_init_invalid_brightness);
-    RUN_TEST(test_state_init_invalid_timeout);
-    RUN_TEST(test_state_init_invalid_timeout_order);
+    printf("Initialization:\n");
+    RUN_TEST(test_init_sets_full_state);
+    RUN_TEST(test_init_stores_config);
 
-    printf("\nTouch event tests:\n");
-    RUN_TEST(test_state_touch_when_full);
-    RUN_TEST(test_state_touch_restores_from_dimmed);
-    RUN_TEST(test_state_touch_restores_from_off);
+    printf("\nTouch events:\n");
+    RUN_TEST(test_touch_when_full_no_change);
+    RUN_TEST(test_touch_from_dimmed_returns_full);
+    RUN_TEST(test_touch_from_off_returns_full);
+    RUN_TEST(test_touch_updates_timestamp);
 
-    printf("\nTimeout event tests:\n");
-    RUN_TEST(test_state_timeout_stays_full_when_active);
-    RUN_TEST(test_state_timeout_dims_after_dim_timeout);
-    RUN_TEST(test_state_timeout_turns_off_after_off_timeout);
-    RUN_TEST(test_state_timeout_skips_dim_when_past_off);
-    RUN_TEST(test_state_timeout_from_dimmed_to_off);
+    printf("\nTimeout events:\n");
+    RUN_TEST(test_timeout_before_dim_no_change);
+    RUN_TEST(test_timeout_at_dim_transitions);
+    RUN_TEST(test_timeout_at_off_transitions);
+    RUN_TEST(test_timeout_in_off_no_change);
+    RUN_TEST(test_timeout_dimmed_to_off);
 
-    printf("\nClock adjustment tests:\n");
-    RUN_TEST(test_state_handles_clock_backwards);
+    printf("\nTimeout calculation:\n");
+    RUN_TEST(test_get_timeout_from_full);
+    RUN_TEST(test_get_timeout_from_dimmed);
+    RUN_TEST(test_get_timeout_from_off);
+    RUN_TEST(test_get_timeout_expired_returns_zero);
 
-    printf("\nGetter tests:\n");
-    RUN_TEST(test_state_get_current);
-    RUN_TEST(test_state_get_brightness);
-    RUN_TEST(test_state_get_next_timeout_from_full);
-    RUN_TEST(test_state_get_next_timeout_from_dimmed);
-    RUN_TEST(test_state_get_next_timeout_from_off);
-    RUN_TEST(test_state_get_next_timeout_expired);
+    printf("\nBrightness getter:\n");
+    RUN_TEST(test_get_brightness_full);
+    RUN_TEST(test_get_brightness_dimmed);
+    RUN_TEST(test_get_brightness_off);
 
-    printf("\nState transition sequence test:\n");
-    RUN_TEST(test_state_full_sequence);
+    printf("\nState getter:\n");
+    RUN_TEST(test_get_current_state);
+
+    printf("\nEdge cases:\n");
+    RUN_TEST(test_wraparound_handling);
+    RUN_TEST(test_zero_idle_time);
+
+    printf("\nFull lifecycle:\n");
+    RUN_TEST(test_full_lifecycle);
 
     printf("\n========================================\n");
     printf("Results: %d/%d passed", tests_passed, tests_run);

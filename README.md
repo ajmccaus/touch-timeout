@@ -17,7 +17,7 @@ cd touch-timeout
 make && sudo make install
 ```
 
-→ **[Complete guide: INSTALLATION.md - Method 1](doc/INSTALLATION.md#method-1-direct-installation-on-raspberry-pi)**
+See [INSTALLATION.md](doc/INSTALLATION.md) for complete guide.
 
 ### For Developers
 
@@ -27,48 +27,70 @@ make && sudo make install
 make deploy-arm64 RPI=<IP_ADDRESS>
 ```
 
-→ **[Complete guide: INSTALLATION.md - Method 2](doc/INSTALLATION.md#method-2-remote-deployment-cross-compilation)**
+See [INSTALLATION.md - Remote Deployment](doc/INSTALLATION.md#method-2-remote-deployment-cross-compilation) for details.
 
 ---
 
 ## Features
 
-- **Works out-of-box with sensible defaults** - no configuration required!
-- **Configurable dimming**: Percentage-based dim timing (1-100% of off timeout)
-- **Power efficient**: <0.05% CPU usage during idle
-- **Hardware-optimized**: Respects display max brightness, prevents flicker
-- **Robust**: Handles missed poll cycles, system suspend/resume
+- **Works out-of-box** - sensible defaults, no configuration required
+- **Configurable via CLI** - all options available as command-line arguments
+- **Power efficient** - <0.05% CPU usage during idle (poll-based, zero CPU when waiting)
+- **External wake support** - SIGUSR1 for shairport-sync integration
+- **Hardware-aware** - respects display max brightness, prevents flicker
 - Systemd integration with graceful shutdown
 
 ## Default Behavior
 
 | Event | Action |
 |-------|--------|
-| **Service start** | Uses hardcoded defaults or `/etc/touch-timeout.conf` if present (see [Configuration](#configuration)) |
+| **Service start** | Full brightness (150), ready for touch |
 | **Touch detected** | Restores full brightness, resets idle timer |
-| **Idle (10% of timeout)** | Dims to `user_brightness ÷ 10` (minimum 10) |
-| **Idle (100% of timeout)** | Powers off display (brightness = 0) |
-| **Invalid config** | Logs warning, falls back to defaults |
-| **Systemd stop** | Gracefully closes file descriptors |
+| **Idle 30s** | Dims to 10% brightness (minimum 10) |
+| **Idle 5 min** | Powers off display (brightness = 0) |
+| **SIGUSR1** | Wakes display (for shairport-sync integration) |
+| **Systemd stop** | Restores brightness, graceful shutdown |
+
+## Configuration
+
+**Defaults work for most setups.** To customize, use systemd override:
+
+```bash
+sudo systemctl edit touch-timeout
+```
+
+Add your options:
+
+```ini
+[Service]
+ExecStart=
+ExecStart=/usr/bin/touch-timeout -b 200 -t 600
+```
+
+**CLI Options:**
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-b, --brightness=N` | Full brightness (15-255) | 150 |
+| `-t, --timeout=N` | Off timeout in seconds (10-86400) | 300 |
+| `-d, --dim-percent=N` | Dim at N% of timeout (1-100) | 10 |
+| `-l, --backlight=NAME` | Backlight device | rpi_backlight |
+| `-i, --input=NAME` | Input device | event0 |
+| `-f, --foreground` | Run in foreground, log to stderr | |
+| `-v, --verbose` | Verbose logging | |
+
+**External Wake (shairport-sync):**
+
+```bash
+# Wake display programmatically
+pkill -USR1 touch-timeout
+```
+
+See [INSTALLATION.md - Configuration](doc/INSTALLATION.md#configuration) for more examples.
 
 ## Performance
 
 Optimized for 24/7 embedded operation: <0.05% CPU idle, ~200 KB memory, instant touch response.
-
-See [ARCHITECTURE.md - Performance Metrics](doc/ARCHITECTURE.md#performance-metrics) for benchmarks.
-
-## Configuration
-
-**Hardcoded Defaults:**
-- `brightness=150` - Active screen brightness (15-255, recommend ≤200 for RPi official 7" touchscreen)
-- `off_timeout=300` - 5 minutes until screen off (minimum 10 seconds)
-- `dim_percent=10` - Dims at 10% of timeout (e.g., 30s for default 300s timeout)
-- `backlight=rpi_backlight` - RPi official 7" touchscreen backlight device
-- `device=event0` - First input device
-
-**To customize:** See [INSTALLATION.md - Configuration](doc/INSTALLATION.md#configuration) for complete examples:
-- Creating `/etc/touch-timeout.conf` (copy/paste template provided)
-- Using CLI arguments in systemd service file
 
 ## Future Roadmap
 
@@ -79,4 +101,3 @@ This is a learning project maintained in my spare time.
 - Bug reports: Welcomed with reproduction steps
 - Feature requests: Considered but not guaranteed
 - PRs: No guarantees on response time
-- Commercial support: Not available

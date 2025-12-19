@@ -180,39 +180,78 @@ ssh <USER>@<IP_ADDRESS> "echo OK"
 
 ## Configuration
 
-**The daemon works out-of-box** - no configuration required! See [README.md - Configuration](../README.md#configuration) for default values.
+**The daemon works out-of-box** - no configuration required!
 
-To customize, choose one of the options below:
+**Defaults:**
+- Brightness: 150 (of 255)
+- Timeout: 300 seconds (5 minutes)
+- Dim at: 10% of timeout (30 seconds)
 
-### Option 1: Config File
+### Customizing with systemd (Recommended)
 
-Create `/etc/touch-timeout.conf`:
+Use systemd's override mechanism - changes survive package updates:
 
-```ini
-# All values optional - only specify what you want to change
-brightness=160        # 15-255, default 150
-off_timeout=600       # seconds, default 300
-dim_percent=20        # 1-100, default 10
-backlight=rpi_backlight
-device=event0
-```
-
-Then restart: `sudo systemctl restart touch-timeout.service`
-
-### Option 2: CLI Arguments
-
-Override via systemd:
 ```bash
-sudo systemctl edit touch-timeout.service
+sudo systemctl edit touch-timeout
 ```
+
+Add your custom ExecStart:
 
 ```ini
 [Service]
 ExecStart=
-ExecStart=/usr/bin/touch-timeout 200 600 rpi_backlight event0
+ExecStart=/usr/bin/touch-timeout -b 200 -t 600
 ```
 
-Then: `sudo systemctl daemon-reload && sudo systemctl restart touch-timeout.service`
+Save and restart:
+
+```bash
+sudo systemctl restart touch-timeout
+```
+
+### CLI Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-b, --brightness=N` | Full brightness (15-255) | 150 |
+| `-t, --timeout=N` | Off timeout in seconds (10-86400) | 300 |
+| `-d, --dim-percent=N` | Dim at N% of timeout (1-100) | 10 |
+| `-l, --backlight=NAME` | Backlight device | rpi_backlight |
+| `-i, --input=NAME` | Input device | event0 |
+| `-f, --foreground` | Run in foreground, log to stderr | |
+| `-v, --verbose` | Enable verbose logging | |
+
+### Examples
+
+**Brighter screen, longer timeout:**
+```bash
+sudo systemctl edit touch-timeout
+# Add:
+[Service]
+ExecStart=
+ExecStart=/usr/bin/touch-timeout -b 200 -t 600
+```
+
+**Debug mode (run manually):**
+```bash
+sudo systemctl stop touch-timeout
+sudo /usr/bin/touch-timeout -f -v
+```
+
+### External Wake (shairport-sync)
+
+Wake display from external programs:
+
+```bash
+pkill -USR1 touch-timeout
+```
+
+**shairport-sync config (`/etc/shairport-sync.conf`):**
+```
+sessioncontrol = {
+    run_this_before_play_begins = "/usr/bin/pkill -USR1 touch-timeout";
+};
+```
 
 ### Finding Your Touchscreen Device
 
@@ -317,7 +356,6 @@ journalctl -u touch-timeout.service -n 50
 
 **Check that:**
 - Symlink target binary exists: `ls -l /usr/bin/touch-timeout`
-- `/etc/touch-timeout.conf` is valid
 - Binary is executable
 - Device `/dev/input/event0` exists (or configured device)
 - Backlight device exists: `ls /sys/class/backlight/`
@@ -351,11 +389,6 @@ sudo systemctl stop touch-timeout.service
 sudo systemctl disable touch-timeout.service
 sudo rm /usr/bin/touch-timeout* /etc/systemd/system/touch-timeout.service
 sudo systemctl daemon-reload
-```
-
-Optionally remove config:
-```bash
-sudo rm /etc/touch-timeout.conf
 ```
 
 ---

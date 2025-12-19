@@ -9,17 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Build system**: Flattened build output to `build/touch-timeout-{version}-{arch}`
-- **Deployment**: New `make deploy-arm64 RPI=<ip>` targets replace standalone deploy script
-- **SSH handling**: Single password prompt via ControlMaster (was multiple prompts)
-- **deploy.sh**: Simplified from 258 to ~100 lines (Makefile handles orchestration)
-- **test-deployment.sh**: Simplified from 112 to 47 lines (syntax validation focus)
+- **Architecture**: Simplified from 6 modules (~900 lines) to 2 modules (~370 lines)
+  - `main.c`: CLI, device I/O, event loop (all inlined)
+  - `state.c`: Pure state machine (no I/O, no time calls)
+- **CLI**: Replaced positional args with `getopt_long` named options (`-b`, `-t`, `-d`, etc.)
+- **Timer**: Single `poll()` timeout replaces `timerfd` (simpler, same performance)
+- **Clock**: Consistent `CLOCK_MONOTONIC` via caller-provided timestamps (was mixed clocks)
+- **State machine**: Pure implementation - caller passes `now_ms`, no `time()` or `syslog()` calls
+- **Build flags**: `-std=c99 -D_GNU_SOURCE` (was `-std=c17 -D_POSIX_C_SOURCE`)
 
-### Improved
+### Added
 
-- **Performance script UX**: Progress dots instead of per-line CPU output, added CPU_MAX_PCT metric
-- **Script robustness**: Process death detection mid-test, safe arithmetic for edge cases
-- **Documentation consistency**: Fixed CPU claim (0.1% -> 0.05% in README features)
+- **SIGUSR1 wake**: External programs can wake display via `pkill -USR1 touch-timeout`
+- **Foreground mode**: `-f` flag for development/debugging (logs to stderr)
+- **Verbose mode**: `-v` flag for detailed logging (state transitions)
+- **Version flag**: `-V` shows version
+
+### Removed
+
+- **Config file**: No longer reads `/etc/touch-timeout.conf` (CLI-only configuration)
+- **timerfd**: Replaced with single `poll()` timeout
+- **Modules**: Deleted `config.c/h`, `display.c/h`, `input.c/h`, `timer.c/h`
+- **Tests**: Removed `test_config.c` and `tests/mocks/` (no longer needed)
 
 ## [2.0.0] - 2025-12-11
 

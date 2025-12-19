@@ -1,10 +1,9 @@
-# Makefile for touch-timeout daemon (modular version 2.0)
+# Makefile for touch-timeout daemon v2.0
 #
-# Build modular C daemon with:
-# - Separate compilation units for each module
+# Simplified 2-module architecture:
+# - main.c: CLI, device I/O, event loop
+# - state.c: Pure state machine (no I/O)
 # - Optional systemd support
-# - Unit tests with mocking
-# - Code coverage reporting
 
 # Version management (single source of truth)
 VERSION_MAJOR = 2
@@ -13,26 +12,15 @@ VERSION_PATCH = 0
 VERSION = $(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_PATCH)
 
 CC = gcc
-CFLAGS = -O2 -Wall -Wextra -Wno-unused-parameter -std=c17 -D_POSIX_C_SOURCE=200809L -Iinclude
+CFLAGS = -O2 -Wall -Wextra -Wno-unused-parameter -std=c99 -D_GNU_SOURCE -Iinclude
 LDFLAGS =
 BUILD_DIR = build
 TARGET = $(BUILD_DIR)/touch-timeout-$(VERSION)-native
 
-# Detect OS - add mock includes for non-Linux systems
-UNAME_S := $(shell uname -s)
-ifneq ($(UNAME_S),Linux)
-    CFLAGS += -I./tests/mocks
-    $(info Building on $(UNAME_S) with mock headers)
-endif
-
 # Source files
 SRC_DIR = src
 SRCS = $(SRC_DIR)/main.c \
-       $(SRC_DIR)/config.c \
-       $(SRC_DIR)/display.c \
-       $(SRC_DIR)/input.c \
-       $(SRC_DIR)/state.c \
-       $(SRC_DIR)/timer.c
+       $(SRC_DIR)/state.c
 
 OBJS = $(SRCS:.c=.o)
 
@@ -51,7 +39,6 @@ endif
 PREFIX = /usr
 BINDIR = $(PREFIX)/bin
 SYSTEMD_UNIT_DIR = /etc/systemd/system
-CONFIG_DIR = /etc
 
 .PHONY: all clean install uninstall test coverage version help arm32 arm64 clean-all deploy-arm32 deploy-arm64
 
@@ -82,11 +69,11 @@ help:
 # Cross-compilation targets for ARM
 arm32: version $(BUILD_DIR)
 	$(MAKE) clean-objs
-	$(MAKE) CC=arm-linux-gnueabihf-gcc CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -std=c17 -D_POSIX_C_SOURCE=200809L -Iinclude -march=armv7-a -mfpu=neon" TARGET=$(BUILD_DIR)/touch-timeout-$(VERSION)-arm32 all
+	$(MAKE) CC=arm-linux-gnueabihf-gcc CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -std=c99 -D_GNU_SOURCE -Iinclude -march=armv7-a -mfpu=neon" TARGET=$(BUILD_DIR)/touch-timeout-$(VERSION)-arm32 all
 
 arm64: version $(BUILD_DIR)
 	$(MAKE) clean-objs
-	$(MAKE) CC=aarch64-linux-gnu-gcc CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -std=c17 -D_POSIX_C_SOURCE=200809L -Iinclude -march=armv8-a" TARGET=$(BUILD_DIR)/touch-timeout-$(VERSION)-arm64 all
+	$(MAKE) CC=aarch64-linux-gnu-gcc CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -std=c99 -D_GNU_SOURCE -Iinclude -march=armv8-a" TARGET=$(BUILD_DIR)/touch-timeout-$(VERSION)-arm64 all
 
 # Deploy targets (require RPI=<ip>)
 deploy-arm32:
@@ -133,12 +120,8 @@ $(TARGET): $(OBJS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 # Dependencies (headers)
-$(SRC_DIR)/main.o: $(SRC_DIR)/config.h $(SRC_DIR)/display.h $(SRC_DIR)/input.h $(SRC_DIR)/state.h $(SRC_DIR)/timer.h include/version.h
-$(SRC_DIR)/config.o: $(SRC_DIR)/config.h
-$(SRC_DIR)/display.o: $(SRC_DIR)/display.h $(SRC_DIR)/config.h
-$(SRC_DIR)/input.o: $(SRC_DIR)/input.h
+$(SRC_DIR)/main.o: $(SRC_DIR)/state.h include/version.h
 $(SRC_DIR)/state.o: $(SRC_DIR)/state.h
-$(SRC_DIR)/timer.o: $(SRC_DIR)/timer.h
 
 # Clean object files only (used between cross-compile targets)
 clean-objs:
@@ -172,9 +155,11 @@ install: $(TARGET)
 	@echo "  sudo systemctl enable touch-timeout.service"
 	@echo "  sudo systemctl start touch-timeout.service"
 	@echo ""
-	@echo "Uses hardcoded defaults. To customize:"
-	@echo "  - Create /etc/touch-timeout.conf (see INSTALLATION.md)"
-	@echo "  - Or edit systemd service file with CLI arguments"
+	@echo "Uses sensible defaults. To customize, use systemctl edit:"
+	@echo "  sudo systemctl edit touch-timeout"
+	@echo "  # Add: [Service]"
+	@echo "  # ExecStart="
+	@echo "  # ExecStart=/usr/bin/touch-timeout -b 200 -t 600"
 
 # Uninstall from system
 uninstall:
@@ -184,4 +169,3 @@ uninstall:
 	rm -f $(DESTDIR)$(SYSTEMD_UNIT_DIR)/touch-timeout.service
 	systemctl daemon-reload 2>/dev/null || true
 	@echo "Uninstallation complete."
-	@echo "Note: If you created /etc/touch-timeout.conf, it has been preserved."
