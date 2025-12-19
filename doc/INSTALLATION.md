@@ -317,7 +317,17 @@ journalctl -u touch-timeout.service -n 50
 
 ## Rollback (Remote Deployment)
 
-List available versions and switch:
+**List available versions:**
+```bash
+make rollback-list RPI=<IP_ADDRESS>
+```
+
+**Rollback to a specific version:**
+```bash
+make rollback RPI=<IP_ADDRESS> TO=0.6.0
+```
+
+**Manual rollback (on RPi):**
 ```bash
 ls -lh /usr/bin/touch-timeout*
 sudo ln -sf /usr/bin/touch-timeout-<VERSION>-<ARCH> /usr/bin/touch-timeout
