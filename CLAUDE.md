@@ -6,46 +6,71 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **touch-timeout** is a lightweight touchscreen backlight manager daemon for Raspberry Pi 7" displays. It automatically dims and powers off the display during inactivity and instantly restores brightness on touch.
 
-**Current Version:** v2.0.0 (released 2025-12-11)
+### Problem
+Raspberry Pi 4 with official 7" touchscreen needs automatic backlight dimming.
+Screen should dim after inactivity, turn off after further inactivity, and wake on
+touch or external signal (e.g., from shairport-sync).
 
-Modular architecture with event-driven I/O, comprehensive testing, and CERT C security compliance. See [CHANGELOG.md](CHANGELOG.md) for release notes and [ROADMAP.md](doc/ROADMAP.md) for future plans.
+### Target Environment
+- Hardware: Raspberry Pi 4, Official 7" Touchscreen (FT5406 controller)
+- OS: HifiBerryOS (minimal Linux, no compiler)
+- Development: WSL2 Debian, cross-compile to RPi
+- Backlight: /sys/class/backlight/rpi_backlight/brightness (0-255)
+- Input: Linux input subsystem (/dev/input/eventX)
 
-## Design Principle
+### Functional Requirements
+1. Set initial brightness on startup
+2. Dim screen after configurable inactivity timeout
+3. Turn screen off after further inactivity timeout  
+4. Wake and restore brightness on touch event
+5. Wake on external signal (IPC from other programs)
+6. Restore brightness on graceful shutdown
+7. Integrate with systemd (Type=simple)
+8. Support foreground mode for development/debugging
 
-See [DESIGN.md](doc/DESIGN.md) for design intent, philosophy, and principles.
-See [ARCHITECTURE.md](doc/ARCHITECTURE.md) for current implementation state.
+### Non-Functional Requirements
+- Zero CPU when idle (blocking I/O only, no polling)
+- No SD card writes during normal operation (log to stderr/journal only)
+- Work with sensible defaults, no config file required
+- Minimal memory footprint, no steady-state dynamic allocation
+
+**Current Version:** v2.0.0 (to be refactored and re-released)
 
 ## Coding Standards and Best Practices
 
-This project follows production-ready embedded C daemon standards to ensure robust, maintainable, and secure code. The following section documents the standards and conventions used.
+This project follows production-ready embedded C daemon standards to ensure robust, maintainable, and robust code. Think DRY and self documenting. 
 
-### Language Standard
+Language: C99
 
-**C17 (ISO/IEC 9899:2018)** with POSIX compliance flags:
-```bash
-gcc -std=c17 -D_POSIX_C_SOURCE=200809L ...
-```
+## Naming Conventions
 
-**Why C17?**
-- Modern standard with bug fixes and clarifications over C11
-- Broad compiler support across embedded toolchains (GCC, Clang)
-- Provides stability without requiring cutting-edge features
-- Backward compatible with C11 code
+**Types:**
+- Struct typedefs: `module_s` suffix (e.g., `state_s`, `config_s`)
+- Enum typedefs: `module_e` suffix (e.g., `state_type_e`, `state_event_e`)
+- Avoids POSIX `_t` suffix conflicts
 
-### Naming Conventions
+**Functions:**
+- Public: `module_verb()` or `module_verb_noun()` (e.g., `state_init()`, `config_load()`)
+- Static: Same pattern for consistency (e.g., `config_trim()`, `config_find_param()`)
+- HAL pattern: `module_open()`, `module_close()`, `module_get_fd()`
 
-See [DESIGN.md - Naming Conventions](doc/DESIGN.md#naming-conventions) for complete standards.
+**Variables:**
+- Globals: `g_` prefix (e.g., `g_running`, `g_config`)
+- Constants/macros: `MODULE_UPPER_CASE` (e.g., `CONFIG_DEFAULT_BRIGHTNESS`)
+- Locals: `snake_case`
 
-**Quick reference:** `module_s` for structs, `module_e` for enums, `module_verb()` for functions.
+## Security Guidelines
 
-### Security Standards
+- Platform: Linux-specific (timerfd, signalfd, poll allowed)
+- Security: Follow CERT C principles for input validation and resource cleanup
 
-See [DESIGN.md - Security Guidelines](doc/DESIGN.md#security-guidelines) for CERT C compliance requirements.
-
+## Development Workflow
+- Cross-compile on WSL2, deploy to /run on RPi over ssh for testing
+- Minimize SD card wear during development iteration
 
 ## Build & Testing
 
-See [README.md](README.md) for complete build instructions and [ARCHITECTURE.md - Test Infrastructure](doc/ARCHITECTURE.md#test-infrastructure) for test details.
+See [INSTALLATION.md] for complete build instructions and test details.
 
 **Quick reference:**
 - `make` - Build native binary
@@ -55,7 +80,18 @@ See [README.md](README.md) for complete build instructions and [ARCHITECTURE.md 
 
 ## Testing Strategy
 
-See [DESIGN.md - Testing Strategy](doc/DESIGN.md#testing-strategy) for coverage targets, test categories, and workflow principles.
+**Coverage target:** 95%+ automated, <10 minutes manual testing on device.
+
+**Test categories:**
+- Initialization and defaults
+- Valid input handling
+- Invalid input handling (boundary conditions)
+- Security (path traversal, overflow, etc.)
+
+**Edge case focus:**
+- Invalid inputs: IP addresses, paths, out-of-range values
+- System boundaries: missing files, permission errors, device disconnection
+- Timing: wraparound, rapid transitions, clock adjustments
 
 **Commands:**
 - `make test` - Run all unit tests
@@ -66,20 +102,12 @@ See [DESIGN.md - Testing Strategy](doc/DESIGN.md#testing-strategy) for coverage 
 - Log verification via `journalctl`
 - State transitions: FULL → DIMMED → OFF
 
-## SD Card Write Optimization
-
-See [DESIGN.md - SD card write optimization](doc/DESIGN.md#decision-sd-card-write-optimization) for the three-layer strategy.
-
-## SSH Key Setup for Remote Deployment
-
-See [INSTALLATION.md - SSH Key Setup](doc/INSTALLATION.md#ssh-key-setup-optional-but-recommended) for comprehensive SSH key configuration instructions.
-
-Quick reference:
-```bash
-ssh-copy-id <USER>@<IP_ADDRESS>
-ssh <USER>@<IP_ADDRESS> "echo OK"  # Verify passwordless login
-```
-
+## Out of Scope
+- Brightness ramping/animation
+- Multiple displays
+- Ambient light sensing
+- D-Bus interface
+- Config file parsing
 
 ## Project Structure
 
@@ -89,7 +117,6 @@ touch-timeout/
 ├── CHANGELOG.md        # Release history
 ├── CLAUDE.md           # AI instructions (this file)
 ├── doc/
-│   ├── DESIGN.md       # Design intent (prescriptive, stable)
 │   ├── ARCHITECTURE.md # Current state (descriptive, per-release)
 │   ├── INSTALLATION.md # User install guide
 │   ├── ROADMAP.md      # Future plans
@@ -104,97 +131,13 @@ touch-timeout/
 **Separation of Concerns:**
 - **Root**: Entry points only (README, CHANGELOG, CLAUDE.md)
 - **doc/**: All documentation (user and developer)
-- **DESIGN.md**: How it SHOULD work (prescriptive) - stable across versions
 - **ARCHITECTURE.md**: How it DOES work (descriptive) - updated each release
 - **plans/**: Ephemeral implementation guidance, archived after release
 
 ## Architecture
 
-See [ARCHITECTURE.md](doc/ARCHITECTURE.md) for current implementation and [DESIGN.md](doc/DESIGN.md) for design intent.
-
 **Key patterns when modifying code:**
 - **Event-Driven I/O**: poll() on input + timer fds, zero CPU while idle
 - **Pure state machine**: state.c has zero I/O dependencies (enables unit testing)
-- **HAL modules**: display/input/timer abstract hardware for portability
-- **Table-Driven Config**: Adding parameter = one table entry + test
 
 **State transitions:** FULL → DIMMED (at dim_percent timeout) → OFF (at off_timeout)
-
-## Configuration
-
-Default config: `/etc/touch-timeout.conf` (see [INSTALLATION.md - Configuration](doc/INSTALLATION.md#configuration) for example)
-
-**Configuration parameters:** See [README.md - Configuration](README.md#configuration) for complete parameter reference.
-
-## Code Organization
-
-See [ARCHITECTURE.md - Module Interfaces](doc/ARCHITECTURE.md#module-interfaces) for complete module documentation.
-
-**When reading code, start with:**
-
-1. **main.c** - Event loop showing module orchestration
-2. **state.h** - State machine interface
-3. **config.h** - Configuration structure and defaults
-4. **tests/test_state.c** - State machine unit tests (reference)
-5. **Makefile** - Build system and cross-compilation targets
-
-## Documentation Standards
-
-**SSoT (Single Source of Truth) for this project:**
-- **Design intent/philosophy**: DESIGN.md (in doc/)
-- **Current implementation**: ARCHITECTURE.md (in doc/)
-- **Configuration parameters**: README.md
-- **Installation/deployment**: INSTALLATION.md (in doc/)
-- **Future plans**: ROADMAP.md (in doc/)
-- **Build commands**: Makefile
-- **Code defaults**: src/config.h
-
-When documenting, reference the SSoT instead of duplicating.
-
-**Plan files:**
-- Active plans live in `doc/plans/`
-- Move to `doc/plans/archive/` when version ships
-- Plans guide implementation, then become historical record
-
-## Development Patterns
-
-See [DESIGN.md - Development Patterns](doc/DESIGN.md#development-patterns) for extending configuration, state machine, and HAL modules.
-
-**Script Organization:**
-- `tests/` = C unit test source files (compiled executables)
-- `scripts/` = Shell scripts (deployment, testing, automation)
-
-## Systemd Integration
-
-Service file: `systemd/touch-timeout.service`
-
-**Optional systemd features** (requires libsystemd):
-- sd_notify() for startup confirmation
-- Watchdog pinging for health monitoring
-- Graceful shutdown handling
-
-**Fallback**: Builds without libsystemd using stub functions. Type=simple service works on minimal systems.
-
-View logs:
-```bash
-journalctl -u touch-timeout.service -f
-systemctl status touch-timeout.service
-```
-
-## Known Limitations
-
-See [ARCHITECTURE.md - Known Limitations](doc/ARCHITECTURE.md#known-limitations).
-
-## Future Roadmap (v2.1+)
-
-See [ROADMAP.md](doc/ROADMAP.md) for planned features.
-
-## References
-
-- DESIGN.md: Design intent, philosophy, and principles
-- ARCHITECTURE.md: Current implementation state
-- README.md: Feature overview and configuration
-- INSTALLATION.md: Installation and deployment
-- ROADMAP.md: Future plans
-- [CERT C Coding Standard](https://wiki.sei.cmu.edu/confluence/display/c/SEI+CERT+C+Coding+Standard)
-- [timerfd API](https://man7.org/linux/man-pages/man2/timerfd_create.2.html)

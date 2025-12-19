@@ -24,8 +24,7 @@ make && sudo make install
 **Cross-compile on Linux/WSL2 and deploy to Raspberry Pi:**
 
 ```bash
-# One-step deployment (auto-install, recommended)
-./scripts/deploy-arm.sh <IP_ADDRESS> arm64
+make deploy-arm64 RPI=<IP_ADDRESS>
 ```
 
 → **[Complete guide: INSTALLATION.md - Method 2](doc/INSTALLATION.md#method-2-remote-deployment-cross-compilation)**

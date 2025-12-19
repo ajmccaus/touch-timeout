@@ -113,13 +113,13 @@ Located in `main.c`:
 
 | Target | Output | Description |
 |--------|--------|-------------|
-| `make` | `build/native/touch-timeout` | Native build |
+| `make` | `build/touch-timeout-{ver}-native` | Native build |
+| `make arm32` | `build/touch-timeout-{ver}-arm32` | Cross-compile ARM 32-bit |
+| `make arm64` | `build/touch-timeout-{ver}-arm64` | Cross-compile ARM 64-bit |
+| `make deploy-arm64 RPI=<ip>` | - | Build + deploy + install |
 | `make test` | Test executables | Run unit tests |
 | `make coverage` | Coverage report | Generate coverage |
-| `make arm32` | `build/arm32/touch-timeout` | Cross-compile ARM 32-bit |
-| `make arm64` | `build/arm64/touch-timeout` | Cross-compile ARM 64-bit |
-| `make clean` | - | Clean native artifacts |
-| `make clean-all` | - | Clean all build artifacts |
+| `make clean` | - | Clean build artifacts |
 
 **Compiler flags:**
 - `-std=c17 -D_POSIX_C_SOURCE=200809L`
@@ -128,19 +128,19 @@ Located in `main.c`:
 ## Test Infrastructure
 
 **Test executables:**
-- `build/native/test_config` - Configuration module tests
-- `build/native/test_state` - State machine tests
+- `tests/test_config` - Configuration module tests
+- `tests/test_state` - State machine tests
 
 **Test counts:**
 - Config: 44 tests (parsing, validation, security)
 - State: 21 tests (transitions, edge cases)
 
-**Performance testing:** `scripts/test-performance.sh` (on-device)
+**Performance testing:** `scripts/test-performance.sh` (see [INSTALLATION.md](INSTALLATION.md#performance-data-collection))
 
 ## Deployment
 
 **Scripts:**
-- `scripts/deploy-arm.sh` - Cross-compile and deploy to RPi
+- `scripts/deploy.sh` - Transfer and install to RPi (called by Makefile)
 - `scripts/install.sh` - Install on target system
 
 **Staging:** `/run/touch-timeout-staging/` (tmpfs)

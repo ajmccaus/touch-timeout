@@ -9,6 +9,7 @@ Comprehensive guide for installing touch-timeout on Raspberry Pi.
 - [Method 2: Remote Deployment](#method-2-remote-deployment-cross-compilation)
 - [Configuration](#configuration)
 - [Verification](#verification)
+- [Performance Data Collection](#performance-data-collection)
 - [Troubleshooting](#troubleshooting)
 - [Rollback](#rollback)
 - [Uninstall](#uninstall)
@@ -89,10 +90,56 @@ arm-linux-gnueabihf-gcc --version     # ARM 32-bit
 - [ ] SSH access works: `ssh <USER>@<IP_ADDRESS>`
 - [ ] (Optional) SSH keys configured for passwordless deployment
 
+### One-Step Deployment (Recommended)
+
+**Auto-install (default):**
+```bash
+# Deploy to RPi4 (ARM 64-bit) - builds, transfers, and installs
+make deploy-arm64 RPI=<IP_ADDRESS>
+
+# Deploy as non-root user
+make deploy-arm64 RPI=<IP_ADDRESS> RPI_USER=pi
+
+# Deploy to older RPi (ARM 32-bit)
+make deploy-arm32 RPI=<IP_ADDRESS>
+```
+
+**The deployment will:**
+1. Cross-compile binary for specified architecture
+2. Check SSH connectivity (prompts for password once if keys not configured)
+3. Create staging directory on RPi: `/run/touch-timeout-staging/`
+4. Transfer binary, install script, and systemd service
+5. **Automatically install on RPi** (installs binary, service, restarts daemon)
+6. Display completion status
+
+### Two-Step Deployment (Manual)
+
+**Manual mode (transfer only, skip auto-install):**
+```bash
+# Step 1: Transfer only
+make deploy-arm64 RPI=<IP_ADDRESS> MANUAL=1
+
+# Step 2: SSH and install manually
+ssh root@<IP_ADDRESS>
+/run/touch-timeout-staging/install.sh
+```
+
+**Installation options:**
+- **Default (quiet mode)**: Minimizes SD card writes
+- **Verbose mode**: `QUIET_MODE=0 /run/touch-timeout-staging/install.sh`
+
+**The install script will:**
+1. Detect binary architecture from filename
+2. Stop running service (if active)
+3. Install binary as `/usr/bin/touch-timeout-{version}-{arch}`
+4. Create/update symlink: `/usr/bin/touch-timeout`
+5. Install systemd service (if systemd available)
+6. Reload systemd and restart service
+
 ### SSH Key Setup (Optional but Recommended)
 
 **Why use SSH keys?**
-Without SSH keys, you'll be prompted for your password 3-4 times during deployment. SSH keys eliminate password prompts and enable automation.
+Without SSH keys, you'll be prompted for your password once per deployment. SSH keys eliminate this prompt entirely and enable automation.
 
 **Quick SSH Key Setup:**
 
@@ -129,77 +176,6 @@ ssh <USER>@<IP_ADDRESS> "echo OK"
 # Should print "OK" without password prompt
 ```
 
-### One-Step Deployment (Recommended)
-
-**Auto-install (default):**
-```bash
-# Buildroot/minimal systems (root user)
-./scripts/deploy-arm.sh <IP_ADDRESS> arm64
-
-# Custom user (for multi-user systems)
-./scripts/deploy-arm.sh <IP_ADDRESS> arm64 --user <username>
-
-# Deploy arm32 architecture
-./scripts/deploy-arm.sh <IP_ADDRESS> arm32
-
-# Batch mode for CI/CD (requires SSH keys)
-./scripts/deploy-arm.sh <IP_ADDRESS> arm64 --batch
-```
-
-**The script will (auto-install mode):**
-1. Validate IP address and architecture
-2. Check SSH connectivity (will prompt for password if keys not configured)
-3. Cross-compile binary for specified architecture
-4. Create staging directory on RPi: `/run/touch-timeout-staging/`
-5. Transfer binary, install script, and systemd service
-6. **Automatically install on RPi** (installs binary, service, restarts daemon)
-7. Display completion status
-
-### Two-Step Deployment (Manual)
-
-**Manual install (use `--manual` flag):**
-```bash
-# Step 1: Transfer only
-./scripts/deploy-arm.sh <IP_ADDRESS> arm64 --manual
-
-# Step 2: SSH and install manually
-ssh <USER>@<IP_ADDRESS>
-sudo /run/touch-timeout-staging/install.sh
-```
-
-**Installation options:**
-- **Default (quiet mode)**: Minimizes SD card writes
-- **Verbose mode**: `QUIET_MODE=0 sudo /run/touch-timeout-staging/install.sh`
-
-**The install script will:**
-1. Detect binary architecture
-2. Stop running service (if active)
-3. Install binary as `/usr/bin/touch-timeout-{version}-{arch}`
-4. Create/update symlink: `/usr/bin/touch-timeout`
-5. Install systemd service (if systemd available)
-6. Reload systemd and restart service
-
-### CI/CD Automation
-
-For automated pipelines (GitHub Actions, Jenkins, etc.), use `--batch` flag:
-
-```bash
-#!/bin/bash
-set -e
-
-# Deploy with batch mode (requires passwordless SSH)
-./scripts/deploy-arm.sh <IP_ADDRESS> arm64 --user pi --batch
-ssh pi@<IP_ADDRESS> "sudo /run/touch-timeout-staging/install.sh"
-ssh pi@<IP_ADDRESS> "systemctl is-active touch-timeout.service && echo OK"
-```
-
-**What is CI/CD?**
-- **CI** = Continuous Integration (automatically build and test code)
-- **CD** = Continuous Deployment (automatically deploy tested code)
-- Examples: GitHub Actions, Jenkins, GitLab CI/CD
-
-**Note**: Batch mode uses `BatchMode=yes`, which disables password prompts. Ensure SSH keys are configured before using in automation.
-
 ---
 
 ## Configuration
@@ -208,85 +184,41 @@ ssh pi@<IP_ADDRESS> "systemctl is-active touch-timeout.service && echo OK"
 
 To customize, choose one of the options below:
 
-### Option 1: Create Config File (Recommended for Multiple Settings)
+### Option 1: Config File
 
-Create `/etc/touch-timeout.conf` with your custom values:
+Create `/etc/touch-timeout.conf`:
 
-```bash
-sudo nano /etc/touch-timeout.conf
-```
-
-**Example config file** (copy/paste and customize):
 ```ini
-# /etc/touch-timeout.conf
-# Configuration file for touch-timeout service
-#
-# All values are optional - program uses defaults if not specified
-
-# Display brightness when active (15-255)
-# Recommended ≤200 for RPi official 7" touchscreen
-# Default: 150
-brightness=160
-
-# Seconds of inactivity before turning off display
-# Must be ≥10 seconds
-# Default: 300 (5 minutes)
-off_timeout=300
-
-# Percentage of off_timeout when dimming occurs (1-100%)
-# 1 = dim just before off, 10 = dim at 10% of timeout, 50 = dim at halfway point
-# Default: 10
-dim_percent=10
-
-# Backlight device name (found in /sys/class/backlight/)
-# Common values: rpi_backlight, 10-0045
-# Default: rpi_backlight
+# All values optional - only specify what you want to change
+brightness=160        # 15-255, default 150
+off_timeout=600       # seconds, default 300
+dim_percent=20        # 1-100, default 10
 backlight=rpi_backlight
-
-# Input device name (found in /dev/input/)
-# Common values: event0, event1, event2
-# Use 'ls -l /dev/input/by-path/' to identify touchscreen
-# Default: event0
 device=event0
 ```
 
-After creating/editing config:
-```bash
-sudo systemctl restart touch-timeout.service
-```
+Then restart: `sudo systemctl restart touch-timeout.service`
 
-### Option 2: Use Positional CLI Arguments (Quick Override)
+### Option 2: CLI Arguments
 
-Edit the systemd service file to pass arguments:
+Override via systemd:
 ```bash
 sudo systemctl edit touch-timeout.service
 ```
 
-Add override (example):
 ```ini
 [Service]
 ExecStart=
 ExecStart=/usr/bin/touch-timeout 200 600 rpi_backlight event0
-# Arguments: brightness off_timeout backlight device
 ```
 
-Then reload:
+Then: `sudo systemctl daemon-reload && sudo systemctl restart touch-timeout.service`
+
+### Finding Your Touchscreen Device
+
+If default `event0` doesn't work:
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl restart touch-timeout.service
-```
-
-### Identify Your Touchscreen Device
-
-If the default device doesn't work:
-```bash
-# List input devices
-ls -l /dev/input/by-path/
-
-# Find touchscreen (usually contains "event-touch" or "touchscreen")
-# Example output: platform-gpu-event → ../../event0
-
-# Update config or service file with correct event number
+ls -l /dev/input/by-path/  # Find device with "touch" in name
 ```
 
 ---
@@ -316,13 +248,13 @@ top -bn1 -p $(pgrep touch-timeout) | tail -1
 
 ---
 
-## Performance Data Collection (Optional)
+## Performance Data Collection
 
-Collect metrics to verify [README.md](../README.md#performance) claims.
+Collect metrics to verify [README.md](../README.md#performance) claims:
 
 ```bash
 scp scripts/test-performance.sh <USER>@<IP>:/run/
-ssh <USER>@<IP> "bash /run/test-performance.sh [seconds]" | tee perf.txt
+ssh <USER>@<IP> "bash /run/test-performance.sh [seconds]"
 ```
 
 Default 30 seconds. Outputs CPU average, memory, SD writes, FD count.
@@ -333,7 +265,7 @@ Default 30 seconds. Outputs CPU average, memory, SD writes, FD count.
 
 ### SSH Connection Fails (Remote Deployment)
 
-**Symptom**: `ERROR: Cannot connect to <USER>@<IP_ADDRESS>`
+**Symptom**: `[ERROR] SSH connection failed`
 
 **Diagnosis steps:**
 ```bash
@@ -366,32 +298,9 @@ Are you sure you want to continue connecting (yes/no)?
 
 **Action**: Type `yes` and press Enter to add host to `~/.ssh/known_hosts`
 
-### Password Prompts During Deployment
-
-If you're prompted for password 3-4 times during deployment:
-- This is normal if SSH keys aren't configured
-- Consider setting up SSH keys (see "SSH Setup" above) for faster deployments
-- Or use the `--batch` flag to enforce key-only authentication
-
-### Permission Denied (publickey)
-
-If you get this error with `--batch` flag:
-```
-Permission denied (publickey,password).
-```
-
-**Cause**: Batch mode is enabled but SSH keys aren't configured
-
-**Solutions:**
-1. Remove `--batch` flag to allow password authentication
-2. Set up SSH keys (see "SSH Setup" section)
-3. Verify key is added: `ssh-add -l`
-
 ### Cross-Compiler Not Found
 
-```
-ERROR: Cross-compiler not found: aarch64-linux-gnu-gcc
-```
+If `make arm64` fails with compiler not found:
 
 **Fix:**
 ```bash
@@ -426,20 +335,11 @@ journalctl -u touch-timeout.service -n 50
 
 ## Rollback (Remote Deployment)
 
-List available versions:
+List available versions and switch:
 ```bash
 ls -lh /usr/bin/touch-timeout*
-```
-
-Switch to previous version:
-```bash
-sudo ln -sf /usr/bin/touch-timeout-1.0.0-arm64 /usr/bin/touch-timeout
+sudo ln -sf /usr/bin/touch-timeout-<VERSION>-<ARCH> /usr/bin/touch-timeout
 sudo systemctl restart touch-timeout.service
-```
-
-Verify:
-```bash
-journalctl -u touch-timeout.service -n 20
 ```
 
 ---
