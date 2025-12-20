@@ -18,6 +18,9 @@ typedef enum {
     STATE_OFF = 2      /* Screen off - power saving */
 } state_e;
 
+/* Return value indicating no state change occurred */
+#define STATE_NO_CHANGE  (-1)
+
 /* State machine context */
 typedef struct {
     state_e state;              /* Current state */

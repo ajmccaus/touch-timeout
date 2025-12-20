@@ -7,6 +7,12 @@
 
 #include "state.h"
 
+#include <limits.h>
+
+/* Verify timeout values can be safely converted to int for poll() */
+_Static_assert(UINT32_MAX <= (unsigned long)INT_MAX * 2 + 1,
+               "uint32_t range exceeds expected bounds");
+
 void state_init(state_s *st, int brightness_full, int brightness_dim,
                 uint32_t dim_timeout_sec, uint32_t off_timeout_sec) {
     st->state = STATE_FULL;
@@ -24,10 +30,11 @@ int state_touch(state_s *st, uint32_t now_sec) {
         st->state = STATE_FULL;
         return st->brightness_full;
     }
-    return -1;  /* Already full, no change */
+    return STATE_NO_CHANGE;  /* Already full */
 }
 
 int state_timeout(state_s *st, uint32_t now_sec) {
+    /* Unsigned subtraction handles wraparound correctly */
     uint32_t idle = now_sec - st->last_touch_sec;
 
     if (st->state == STATE_FULL && idle >= st->dim_timeout_sec) {
@@ -40,10 +47,11 @@ int state_timeout(state_s *st, uint32_t now_sec) {
         return 0;
     }
 
-    return -1;  /* No transition */
+    return STATE_NO_CHANGE;
 }
 
 int state_get_timeout_sec(const state_s *st, uint32_t now_sec) {
+    /* Unsigned subtraction handles wraparound correctly */
     uint32_t idle = now_sec - st->last_touch_sec;
 
     switch (st->state) {
@@ -58,10 +66,10 @@ int state_get_timeout_sec(const state_s *st, uint32_t now_sec) {
             return (int)(st->off_timeout_sec - idle);
 
         case STATE_OFF:
-            return -1;  /* No timeout, wait for touch */
+            return STATE_NO_CHANGE;  /* No timeout, wait for touch */
 
         default:
-            return -1;  /* Invalid state */
+            return STATE_NO_CHANGE;  /* Invalid state */
     }
 }
 
@@ -74,7 +82,7 @@ int state_get_brightness(const state_s *st) {
         case STATE_OFF:
             return 0;
         default:
-            return -1;  /* Invalid state */
+            return STATE_NO_CHANGE;  /* Invalid state */
     }
 }
 
