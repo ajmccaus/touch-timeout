@@ -1,9 +1,9 @@
 # Makefile for touch-timeout unit tests
 #
-# Tests the pure state machine module with coverage
+# Tests pure modules (state machine, main.c calculations) with coverage
 
 CC = gcc
-CFLAGS = -Wall -Wextra -std=c99 -D_GNU_SOURCE -I../src
+CFLAGS = -Wall -Wextra -std=c99 -D_GNU_SOURCE -I../src -I../include -DUNIT_TEST
 COVERAGE_CFLAGS = --coverage -fprofile-arcs -ftest-coverage -g
 LDFLAGS = --coverage
 
@@ -17,7 +17,7 @@ all: test_state
 state_test.o: $(SRC_DIR)/state.c
 	$(CC) $(CFLAGS) $(COVERAGE_CFLAGS) -c -o $@ $<
 
-# Link test executable
+# Link test executable (main.c included via #include in test_state.c)
 test_state: test_state.c state_test.o
 	$(CC) $(CFLAGS) $(COVERAGE_CFLAGS) -o $@ $^ $(LDFLAGS)
 

@@ -33,9 +33,7 @@ static inline int sd_notify(int unset_environment, const char *state) {
 }
 #endif
 
-/* ============================================================
- * SECTION: Defaults and Limits
- * ============================================================ */
+/* Configuration defaults and limits */
 
 #define DEFAULT_BRIGHTNESS   150
 #define DEFAULT_TIMEOUT_SEC  300
@@ -60,9 +58,7 @@ _Static_assert(MAX_TIMEOUT_SEC <= INT_MAX / 1000,
 _Static_assert(MAX_BRIGHTNESS * MAX_DIM_PERCENT <= INT_MAX,
                "MAX_BRIGHTNESS * MAX_DIM_PERCENT overflow risk");
 
-/* ============================================================
- * SECTION: Buffer Sizes and Paths
- * ============================================================ */
+/* Buffer sizes and paths */
 
 /* Filesystem paths (Linux sysfs/devfs conventions) */
 #define SYSFS_BACKLIGHT_DIR  "/sys/class/backlight"
@@ -80,9 +76,7 @@ _Static_assert(PATH_BUFFER_LEN >= sizeof(SYSFS_BACKLIGHT_DIR) + 1 + MAX_DEVICE_N
 _Static_assert(PATH_BUFFER_LEN >= sizeof(DEV_INPUT_DIR) + 1 + MAX_DEVICE_NAME_LEN,
                "PATH_BUFFER_LEN too small for input paths");
 
-/* ============================================================
- * SECTION: Type Definitions
- * ============================================================ */
+/* Configuration structure */
 
 typedef struct {
     int brightness;
@@ -92,26 +86,20 @@ typedef struct {
     char device[MAX_DEVICE_NAME_LEN];
 } config_s;
 
-/* ============================================================
- * SECTION: Global State
- * ============================================================ */
+/* Global state */
 
 static volatile sig_atomic_t g_running = 1;
 static volatile sig_atomic_t g_wake_requested = 0;
 static bool g_verbose = false;
 
-/* ============================================================
- * SECTION: Logging Macros
- * ============================================================ */
+/* Logging macros */
 
 #define log_info(fmt, ...)    fprintf(stderr, "INFO: " fmt "\n", ##__VA_ARGS__)
 #define log_warn(fmt, ...)    fprintf(stderr, "WARN: " fmt "\n", ##__VA_ARGS__)
 #define log_err(fmt, ...)     fprintf(stderr, "ERROR: " fmt "\n", ##__VA_ARGS__)
 #define log_verbose(fmt, ...) do { if (g_verbose) fprintf(stderr, "DEBUG: " fmt "\n", ##__VA_ARGS__); } while(0)
 
-/* ============================================================
- * SECTION: Utility Functions
- * ============================================================ */
+/* Utility functions */
 
 /*
  * Get current time in seconds (CLOCK_MONOTONIC).
@@ -136,9 +124,39 @@ static int parse_int(const char *str, int *out) {
     return 0;
 }
 
-/* ============================================================
- * SECTION: CLI Parsing
- * ============================================================ */
+/*
+ * Calculate dimmed brightness level
+ *
+ * Returns brightness * dim_percent / 100, clamped to MIN_DIM_BRIGHTNESS
+ */
+static int calculate_dim_brightness(int brightness, int dim_percent) {
+    int dim = brightness * dim_percent / 100;
+    return (dim < MIN_DIM_BRIGHTNESS) ? MIN_DIM_BRIGHTNESS : dim;
+}
+
+/*
+ * Calculate dim and off timeouts from configuration
+ *
+ * dim_sec = off_sec * dim_percent / 100, with constraints:
+ *   - dim_sec >= MIN_DIM_TIMEOUT_SEC
+ *   - dim_sec < off_sec (halved if needed to maintain gap)
+ */
+static void calculate_timeouts(uint32_t timeout_sec, int dim_percent,
+                               uint32_t *dim_sec, uint32_t *off_sec) {
+    *off_sec = timeout_sec;
+    *dim_sec = (timeout_sec * (uint32_t)dim_percent) / 100U;
+
+    if (*dim_sec < MIN_DIM_TIMEOUT_SEC)
+        *dim_sec = MIN_DIM_TIMEOUT_SEC;
+
+    if (*dim_sec >= *off_sec) {
+        *dim_sec = *off_sec / 2;
+        if (*dim_sec < MIN_DIM_TIMEOUT_SEC)
+            *dim_sec = MIN_DIM_TIMEOUT_SEC;
+    }
+}
+
+/* CLI argument parsing */
 
 static void usage(const char *prog) {
     fprintf(stderr,
@@ -251,9 +269,7 @@ static void parse_args(int argc, char **argv, config_s *cfg) {
     }
 }
 
-/* ============================================================
- * SECTION: Device I/O
- * ============================================================ */
+/* Device I/O */
 
 static int open_backlight(const char *name) {
     char path[PATH_BUFFER_LEN];
@@ -346,9 +362,7 @@ static bool drain_touch_events(int fd) {
     return had_touch;
 }
 
-/* ============================================================
- * SECTION: Signal Handling
- * ============================================================ */
+/* Signal handling */
 
 static void handle_signal(int sig) {
     if (sig == SIGUSR1) {
@@ -358,12 +372,31 @@ static void handle_signal(int sig) {
     }
 }
 
-/* ============================================================
- * SECTION: Main
- * ============================================================ */
+/*
+ * Register signal handlers for graceful shutdown and external wake.
+ * Returns 0 on success, -1 on failure.
+ */
+static int setup_signals(void) {
+    struct sigaction sa = {0};
+    sa.sa_handler = handle_signal;
+    sigemptyset(&sa.sa_mask);
+
+    if (sigaction(SIGTERM, &sa, NULL) < 0 ||
+        sigaction(SIGINT, &sa, NULL) < 0 ||
+        sigaction(SIGUSR1, &sa, NULL) < 0) {
+        log_err("sigaction failed: %s", strerror(errno));
+        return -1;
+    }
+
+    signal(SIGPIPE, SIG_IGN);
+    return 0;
+}
+
+#ifndef UNIT_TEST
+/* Entry point */
 
 int main(int argc, char *argv[]) {
-    /* Initialize config with defaults */
+    /* Initialize configuration with defaults */
     config_s cfg = {
         .brightness = DEFAULT_BRIGHTNESS,
         .timeout_sec = DEFAULT_TIMEOUT_SEC,
@@ -371,88 +404,59 @@ int main(int argc, char *argv[]) {
         .backlight = DEFAULT_BACKLIGHT,
         .device = DEFAULT_DEVICE
     };
-
-    /* Parse CLI args */
     parse_args(argc, argv, &cfg);
 
-    /* Open devices (fail fast on error) */
+    /* Open devices */
     int bl_fd = open_backlight(cfg.backlight);
     if (bl_fd < 0)
         return EXIT_FAILURE;
 
     int input_fd = open_input(cfg.device);
-    if (input_fd < 0) {
-        close(bl_fd);
-        return EXIT_FAILURE;
-    }
+    if (input_fd < 0)
+        goto cleanup_bl;
 
-    /* Clamp brightness to hardware max */
+    /* Clamp brightness to hardware maximum */
     int hw_max = get_max_brightness(cfg.backlight);
     if (cfg.brightness > hw_max) {
-        log_info("brightness %d exceeds hardware max %d, clamping", cfg.brightness, hw_max);
+        log_info("brightness %d exceeds hardware max %d, clamping",
+                 cfg.brightness, hw_max);
         cfg.brightness = hw_max;
     }
 
-    /* Calculate derived values */
-    int dim_bright = cfg.brightness * cfg.dim_percent / 100;
-    if (dim_bright < MIN_DIM_BRIGHTNESS)
-        dim_bright = MIN_DIM_BRIGHTNESS;
-
-    /* Calculate timeouts: off_sec from config, dim_sec as percentage */
-    uint32_t off_sec = (uint32_t)cfg.timeout_sec;
-    uint32_t dim_sec = (off_sec * (uint32_t)cfg.dim_percent) / 100U;
-    if (dim_sec < MIN_DIM_TIMEOUT_SEC)
-        dim_sec = MIN_DIM_TIMEOUT_SEC;
-
-    /* Ensure dim_sec < off_sec */
-    if (dim_sec >= off_sec) {
-        dim_sec = off_sec / 2;
-        if (dim_sec < MIN_DIM_TIMEOUT_SEC)
-            dim_sec = MIN_DIM_TIMEOUT_SEC;
-    }
+    /* Derive runtime parameters */
+    int dim_bright = calculate_dim_brightness(cfg.brightness, cfg.dim_percent);
+    uint32_t dim_sec, off_sec;
+    calculate_timeouts((uint32_t)cfg.timeout_sec, cfg.dim_percent,
+                       &dim_sec, &off_sec);
 
     /* Initialize state machine */
     state_s state;
     state_init(&state, cfg.brightness, dim_bright, dim_sec, off_sec);
+    state_touch(&state, now_sec());
 
-    /* Set initial timestamp and brightness */
-    uint32_t now = now_sec();
-    state_touch(&state, now);
+    /* Set initial brightness */
     if (set_brightness(bl_fd, cfg.brightness) < 0) {
         log_err("Cannot set initial brightness - check permissions");
-        close(input_fd);
-        close(bl_fd);
-        return EXIT_FAILURE;
+        goto cleanup_all;
     }
-    int cached_brightness = cfg.brightness;
 
-    /* Setup signals */
-    struct sigaction sa = {0};
-    sa.sa_handler = handle_signal;
-    sigemptyset(&sa.sa_mask);
-    if (sigaction(SIGTERM, &sa, NULL) < 0 ||
-        sigaction(SIGINT, &sa, NULL) < 0 ||
-        sigaction(SIGUSR1, &sa, NULL) < 0) {
-        log_err("sigaction failed: %s", strerror(errno));
-        close(input_fd);
-        close(bl_fd);
-        return EXIT_FAILURE;
-    }
-    signal(SIGPIPE, SIG_IGN);
+    /* Register signal handlers */
+    if (setup_signals() < 0)
+        goto cleanup_all;
 
-    /* Notify systemd */
+    /* Daemon ready */
     sd_notify(0, "READY=1");
-
     log_info("touch-timeout v%s: brightness=%d, dim=%d, dim=%u:%02u, off=%u:%02u",
              VERSION_STRING, cfg.brightness, dim_bright,
              dim_sec / 60, dim_sec % 60,
              off_sec / 60, off_sec % 60);
 
-    /* Event loop */
+    /* Event loop - block on input, wake on touch or timeout */
+    int cached_brightness = cfg.brightness;
     struct pollfd pfd = { .fd = input_fd, .events = POLLIN };
 
     while (g_running) {
-        now = now_sec();
+        uint32_t now = now_sec();
         int timeout_sec = state_get_timeout_sec(&state, now);
         int timeout_ms = (timeout_sec < 0) ? -1 : timeout_sec * 1000;
 
@@ -460,7 +464,7 @@ int main(int argc, char *argv[]) {
 
         if (ret < 0) {
             if (errno == EINTR) {
-                /* Check for SIGUSR1 wake */
+                /* Handle external wake signal (SIGUSR1) */
                 if (g_wake_requested) {
                     g_wake_requested = 0;
                     now = now_sec();
@@ -479,18 +483,17 @@ int main(int argc, char *argv[]) {
         }
 
         now = now_sec();
-        int new_bright = -1;
+        int new_bright = STATE_NO_CHANGE;
 
         if (ret > 0 && (pfd.revents & POLLIN)) {
-            /* Touch event */
+            /* Touch event - wake display */
             if (drain_touch_events(input_fd)) {
                 new_bright = state_touch(&state, now);
-                if (new_bright >= 0) {
+                if (new_bright >= 0)
                     log_verbose("Touch -> FULL (brightness %d)", new_bright);
-                }
             }
         } else if (ret == 0) {
-            /* Timeout */
+            /* Timeout - advance state machine */
             new_bright = state_timeout(&state, now);
             if (new_bright >= 0) {
                 const char *state_name = (new_bright == 0) ? "OFF" : "DIMMED";
@@ -498,24 +501,28 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        /* Update brightness if changed (with caching) */
+        /* Apply brightness change */
         if (new_bright >= 0 && new_bright != cached_brightness) {
-            if (set_brightness(bl_fd, new_bright) == 0) {
+            if (set_brightness(bl_fd, new_bright) == 0)
                 cached_brightness = new_bright;
-            }
         }
     }
 
-    /* Restore brightness and cleanup */
+    /* Graceful shutdown - restore full brightness */
     if (set_brightness(bl_fd, cfg.brightness) == 0) {
         log_info("Brightness restored to %d, shutting down", cfg.brightness);
     } else {
         log_warn("Could not restore brightness on shutdown");
     }
-
     sd_notify(0, "STOPPING=1");
     close(input_fd);
     close(bl_fd);
-
     return EXIT_SUCCESS;
+
+cleanup_all:
+    close(input_fd);
+cleanup_bl:
+    close(bl_fd);
+    return EXIT_FAILURE;
 }
+#endif /* UNIT_TEST */

@@ -1,10 +1,11 @@
 /*
- * test_state.c - Unit tests for pure state machine
+ * test_state.c - Unit tests for state machine and calculations
  *
- * Tests are simple - no mocking needed, just pass timestamps in seconds
+ * Tests pure functions - no mocking needed
+ * main.c included directly (UNIT_TEST excludes main())
  */
 
-#include "../src/state.h"
+#include "../src/main.c"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -325,6 +326,69 @@ TEST(test_full_lifecycle) {
     ASSERT_EQ(timeout, 4);  /* 5 - 1 */
 }
 
+/* ==================== CALCULATION TESTS ==================== */
+
+TEST(test_dim_brightness_normal) {
+    /* 100 brightness at 50% = 50 */
+    ASSERT_EQ(calculate_dim_brightness(100, 50), 50);
+}
+
+TEST(test_dim_brightness_clamps_to_min) {
+    /* 100 brightness at 5% = 5, but MIN_DIM_BRIGHTNESS is 10 */
+    ASSERT_EQ(calculate_dim_brightness(100, 5), MIN_DIM_BRIGHTNESS);
+}
+
+TEST(test_dim_brightness_low_input) {
+    /* 20 brightness at 10% = 2, clamped to MIN_DIM_BRIGHTNESS */
+    ASSERT_EQ(calculate_dim_brightness(20, 10), MIN_DIM_BRIGHTNESS);
+}
+
+TEST(test_dim_brightness_full_percent) {
+    /* 150 brightness at 100% = 150 */
+    ASSERT_EQ(calculate_dim_brightness(150, 100), 150);
+}
+
+TEST(test_timeouts_normal) {
+    uint32_t dim_sec, off_sec;
+    calculate_timeouts(300, 10, &dim_sec, &off_sec);
+    /* 300s timeout at 10% = dim at 30s, off at 300s */
+    ASSERT_EQ(dim_sec, 30);
+    ASSERT_EQ(off_sec, 300);
+}
+
+TEST(test_timeouts_clamps_dim_to_min) {
+    uint32_t dim_sec, off_sec;
+    calculate_timeouts(10, 1, &dim_sec, &off_sec);
+    /* 10s timeout at 1% would be 0.1s, clamped to MIN_DIM_TIMEOUT_SEC */
+    ASSERT_EQ(dim_sec, MIN_DIM_TIMEOUT_SEC);
+    ASSERT_EQ(off_sec, 10);
+}
+
+TEST(test_timeouts_dim_exceeds_off) {
+    uint32_t dim_sec, off_sec;
+    calculate_timeouts(10, 100, &dim_sec, &off_sec);
+    /* 10s timeout at 100% would make dim == off, halved to 5s */
+    ASSERT_TRUE(dim_sec < off_sec);
+    ASSERT_EQ(dim_sec, 5);
+    ASSERT_EQ(off_sec, 10);
+}
+
+TEST(test_timeouts_extreme_small) {
+    uint32_t dim_sec, off_sec;
+    calculate_timeouts(2, 100, &dim_sec, &off_sec);
+    /* 2s timeout at 100%: dim would be 2, halved to 1 */
+    ASSERT_EQ(dim_sec, MIN_DIM_TIMEOUT_SEC);
+    ASSERT_EQ(off_sec, 2);
+}
+
+TEST(test_timeouts_minimum_possible) {
+    uint32_t dim_sec, off_sec;
+    calculate_timeouts(1, 100, &dim_sec, &off_sec);
+    /* 1s timeout at 100%: dim would be 1, halved to 0, clamped to MIN */
+    ASSERT_EQ(dim_sec, MIN_DIM_TIMEOUT_SEC);
+    ASSERT_EQ(off_sec, 1);
+}
+
 /* ==================== MAIN TEST RUNNER ==================== */
 
 int main(void) {
@@ -369,6 +433,19 @@ int main(void) {
 
     printf("\nFull lifecycle:\n");
     RUN_TEST(test_full_lifecycle);
+
+    printf("\nDim brightness calculation:\n");
+    RUN_TEST(test_dim_brightness_normal);
+    RUN_TEST(test_dim_brightness_clamps_to_min);
+    RUN_TEST(test_dim_brightness_low_input);
+    RUN_TEST(test_dim_brightness_full_percent);
+
+    printf("\nTimeout calculation:\n");
+    RUN_TEST(test_timeouts_normal);
+    RUN_TEST(test_timeouts_clamps_dim_to_min);
+    RUN_TEST(test_timeouts_dim_exceeds_off);
+    RUN_TEST(test_timeouts_extreme_small);
+    RUN_TEST(test_timeouts_minimum_possible);
 
     printf("\n========================================\n");
     printf("Results: %d/%d passed", tests_passed, tests_run);
