@@ -57,7 +57,6 @@ Add your options:
 
 ```ini
 [Service]
-ExecStart=
 ExecStart=/usr/bin/touch-timeout -b 200 -t 600
 ```
 
