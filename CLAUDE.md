@@ -99,7 +99,7 @@ See [INSTALLATION.md] for complete build instructions and test details.
 
 **Commands:**
 - `make test` - Run all unit tests
-- `scripts/test-deployment.sh` - Validate deployment changes (<5 seconds)
+- `scripts/test-integration.sh` - Integration tests (infra + CLI validation)
 
 **Manual verification** (on device, minimize):
 - Touch responsiveness after deployment

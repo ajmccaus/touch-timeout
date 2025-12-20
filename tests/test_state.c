@@ -389,6 +389,107 @@ TEST(test_timeouts_minimum_possible) {
     ASSERT_EQ(off_sec, 1);
 }
 
+/* ==================== INPUT PARSING TESTS ==================== */
+
+TEST(test_parse_int_valid) {
+    int val;
+    ASSERT_EQ(parse_int("123", &val), 0);
+    ASSERT_EQ(val, 123);
+}
+
+TEST(test_parse_int_zero) {
+    int val;
+    ASSERT_EQ(parse_int("0", &val), 0);
+    ASSERT_EQ(val, 0);
+}
+
+TEST(test_parse_int_negative) {
+    int val;
+    ASSERT_EQ(parse_int("-50", &val), 0);
+    ASSERT_EQ(val, -50);
+}
+
+TEST(test_parse_int_rejects_empty) {
+    int val;
+    ASSERT_EQ(parse_int("", &val), -1);
+}
+
+TEST(test_parse_int_rejects_trailing_chars) {
+    int val;
+    ASSERT_EQ(parse_int("123abc", &val), -1);
+}
+
+TEST(test_parse_int_rejects_leading_chars) {
+    int val;
+    ASSERT_EQ(parse_int("abc123", &val), -1);
+}
+
+TEST(test_parse_int_rejects_float) {
+    int val;
+    ASSERT_EQ(parse_int("3.14", &val), -1);
+}
+
+TEST(test_parse_int_rejects_overflow) {
+    int val;
+    ASSERT_EQ(parse_int("99999999999999", &val), -1);
+}
+
+TEST(test_parse_int_rejects_underflow) {
+    int val;
+    ASSERT_EQ(parse_int("-99999999999999", &val), -1);
+}
+
+/* ==================== DEVICE NAME VALIDATION TESTS ==================== */
+
+TEST(test_validate_device_name_valid) {
+    ASSERT_TRUE(validate_device_name("event0"));
+    ASSERT_TRUE(validate_device_name("rpi_backlight"));
+    ASSERT_TRUE(validate_device_name("a"));
+}
+
+TEST(test_validate_device_name_rejects_empty) {
+    ASSERT_TRUE(!validate_device_name(""));
+}
+
+TEST(test_validate_device_name_rejects_slash) {
+    ASSERT_TRUE(!validate_device_name("foo/bar"));
+    ASSERT_TRUE(!validate_device_name("/etc/passwd"));
+}
+
+TEST(test_validate_device_name_rejects_path_traversal) {
+    ASSERT_TRUE(!validate_device_name(".."));
+    ASSERT_TRUE(!validate_device_name("../etc/passwd"));
+    ASSERT_TRUE(!validate_device_name("foo/../bar"));
+}
+
+TEST(test_validate_device_name_rejects_dotdot_in_name) {
+    /* ".." substring anywhere is rejected */
+    ASSERT_TRUE(!validate_device_name("foo..bar"));
+    ASSERT_TRUE(!validate_device_name("..hidden"));
+}
+
+TEST(test_validate_device_name_allows_single_dot) {
+    /* Single dots are fine - only ".." is dangerous */
+    ASSERT_TRUE(validate_device_name(".hidden"));
+    ASSERT_TRUE(validate_device_name("file.txt"));
+}
+
+TEST(test_validate_device_name_rejects_too_long) {
+    /* MAX_DEVICE_NAME_LEN is 64, so 64+ chars should fail */
+    char long_name[MAX_DEVICE_NAME_LEN + 1];
+    memset(long_name, 'a', MAX_DEVICE_NAME_LEN);
+    long_name[MAX_DEVICE_NAME_LEN] = '\0';
+    ASSERT_TRUE(!validate_device_name(long_name));
+}
+
+TEST(test_validate_device_name_accepts_max_minus_one) {
+    /* MAX_DEVICE_NAME_LEN - 1 chars should succeed */
+    char ok_name[MAX_DEVICE_NAME_LEN];
+    memset(ok_name, 'a', MAX_DEVICE_NAME_LEN - 1);
+    ok_name[MAX_DEVICE_NAME_LEN - 1] = '\0';
+    ASSERT_TRUE(validate_device_name(ok_name));
+}
+
 /* ==================== MAIN TEST RUNNER ==================== */
 
 int main(void) {
@@ -446,6 +547,27 @@ int main(void) {
     RUN_TEST(test_timeouts_dim_exceeds_off);
     RUN_TEST(test_timeouts_extreme_small);
     RUN_TEST(test_timeouts_minimum_possible);
+
+    printf("\nInput parsing:\n");
+    RUN_TEST(test_parse_int_valid);
+    RUN_TEST(test_parse_int_zero);
+    RUN_TEST(test_parse_int_negative);
+    RUN_TEST(test_parse_int_rejects_empty);
+    RUN_TEST(test_parse_int_rejects_trailing_chars);
+    RUN_TEST(test_parse_int_rejects_leading_chars);
+    RUN_TEST(test_parse_int_rejects_float);
+    RUN_TEST(test_parse_int_rejects_overflow);
+    RUN_TEST(test_parse_int_rejects_underflow);
+
+    printf("\nDevice name validation:\n");
+    RUN_TEST(test_validate_device_name_valid);
+    RUN_TEST(test_validate_device_name_rejects_empty);
+    RUN_TEST(test_validate_device_name_rejects_slash);
+    RUN_TEST(test_validate_device_name_rejects_path_traversal);
+    RUN_TEST(test_validate_device_name_rejects_dotdot_in_name);
+    RUN_TEST(test_validate_device_name_allows_single_dot);
+    RUN_TEST(test_validate_device_name_rejects_too_long);
+    RUN_TEST(test_validate_device_name_accepts_max_minus_one);
 
     printf("\n========================================\n");
     printf("Results: %d/%d passed", tests_passed, tests_run);
