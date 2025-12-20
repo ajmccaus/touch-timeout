@@ -50,7 +50,7 @@ static inline int sd_notify(int unset_environment, const char *state) {
 #define MIN_DIM_PERCENT      1
 #define MAX_DIM_PERCENT      100
 #define MIN_DIM_BRIGHTNESS   10
-#define MIN_DIM_TIMEOUT_MS   1000
+#define MIN_DIM_TIMEOUT_SEC  1
 
 /* Ensure timeout fits in poll() int parameter */
 _Static_assert(MAX_TIMEOUT_SEC <= INT_MAX / 1000,
@@ -114,15 +114,14 @@ static bool g_verbose = false;
  * ============================================================ */
 
 /*
- * Get current time in milliseconds (CLOCK_MONOTONIC).
- * Returns uint32_t which wraps every ~49.7 days.
- * Wraparound is intentional: subtraction still yields correct elapsed time
- * due to unsigned arithmetic. See test_wraparound_handling in test suite.
+ * Get current time in seconds (CLOCK_MONOTONIC).
+ * Returns uint32_t which wraps every ~136 years.
+ * Wraparound handled by unsigned arithmetic. See test_wraparound_handling.
  */
-static uint32_t now_ms(void) {
+static uint32_t now_sec(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+    return (uint32_t)ts.tv_sec;
 }
 
 /* Parse integer from string, returns -1 on error */
@@ -399,25 +398,25 @@ int main(int argc, char *argv[]) {
     if (dim_bright < MIN_DIM_BRIGHTNESS)
         dim_bright = MIN_DIM_BRIGHTNESS;
 
-    /* Calculate timeouts: off_ms first, then dim_ms as percentage of off_ms */
-    uint32_t off_ms = (uint32_t)cfg.timeout_sec * 1000U;
-    uint32_t dim_ms = (off_ms * (uint32_t)cfg.dim_percent) / 100U;
-    if (dim_ms < MIN_DIM_TIMEOUT_MS)
-        dim_ms = MIN_DIM_TIMEOUT_MS;
+    /* Calculate timeouts: off_sec from config, dim_sec as percentage */
+    uint32_t off_sec = (uint32_t)cfg.timeout_sec;
+    uint32_t dim_sec = (off_sec * (uint32_t)cfg.dim_percent) / 100U;
+    if (dim_sec < MIN_DIM_TIMEOUT_SEC)
+        dim_sec = MIN_DIM_TIMEOUT_SEC;
 
-    /* Ensure dim_ms < off_ms */
-    if (dim_ms >= off_ms) {
-        dim_ms = off_ms / 2;
-        if (dim_ms < MIN_DIM_TIMEOUT_MS)
-            dim_ms = MIN_DIM_TIMEOUT_MS;
+    /* Ensure dim_sec < off_sec */
+    if (dim_sec >= off_sec) {
+        dim_sec = off_sec / 2;
+        if (dim_sec < MIN_DIM_TIMEOUT_SEC)
+            dim_sec = MIN_DIM_TIMEOUT_SEC;
     }
 
     /* Initialize state machine */
     state_s state;
-    state_init(&state, cfg.brightness, dim_bright, dim_ms, off_ms);
+    state_init(&state, cfg.brightness, dim_bright, dim_sec, off_sec);
 
     /* Set initial timestamp and brightness */
-    uint32_t now = now_ms();
+    uint32_t now = now_sec();
     state_touch(&state, now);
     if (set_brightness(bl_fd, cfg.brightness) < 0) {
         log_err("Cannot set initial brightness - check permissions");
@@ -444,15 +443,18 @@ int main(int argc, char *argv[]) {
     /* Notify systemd */
     sd_notify(0, "READY=1");
 
-    log_info("touch-timeout v%s: brightness=%d, dim=%d, dim_ms=%u, off_ms=%u",
-             VERSION_STRING, cfg.brightness, dim_bright, dim_ms, off_ms);
+    log_info("touch-timeout v%s: brightness=%d, dim=%d, dim=%u:%02u, off=%u:%02u",
+             VERSION_STRING, cfg.brightness, dim_bright,
+             dim_sec / 60, dim_sec % 60,
+             off_sec / 60, off_sec % 60);
 
     /* Event loop */
     struct pollfd pfd = { .fd = input_fd, .events = POLLIN };
 
     while (g_running) {
-        now = now_ms();
-        int timeout_ms = state_get_timeout_ms(&state, now);
+        now = now_sec();
+        int timeout_sec = state_get_timeout_sec(&state, now);
+        int timeout_ms = (timeout_sec < 0) ? -1 : timeout_sec * 1000;
 
         int ret = poll(&pfd, 1, timeout_ms);
 
@@ -461,7 +463,7 @@ int main(int argc, char *argv[]) {
                 /* Check for SIGUSR1 wake */
                 if (g_wake_requested) {
                     g_wake_requested = 0;
-                    now = now_ms();
+                    now = now_sec();
                     int new_bright = state_touch(&state, now);
                     if (new_bright >= 0 && new_bright != cached_brightness) {
                         if (set_brightness(bl_fd, new_bright) == 0) {
@@ -476,7 +478,7 @@ int main(int argc, char *argv[]) {
             break;
         }
 
-        now = now_ms();
+        now = now_sec();
         int new_bright = -1;
 
         if (ret > 0 && (pfd.revents & POLLIN)) {

@@ -3,7 +3,7 @@
  *
  * Three-state Moore machine: FULL -> DIMMED -> OFF
  * Pure logic only - no I/O, no time calls
- * Caller provides timestamps from CLOCK_MONOTONIC
+ * Caller provides timestamps in seconds from CLOCK_MONOTONIC
  */
 
 #ifndef TOUCH_TIMEOUT_STATE_H
@@ -21,36 +21,36 @@ typedef enum {
 /* State machine context */
 typedef struct {
     state_e state;              /* Current state */
-    uint32_t last_touch_ms;     /* Timestamp of last touch (monotonic ms) */
+    uint32_t last_touch_sec;    /* Timestamp of last touch (monotonic sec) */
     int brightness_full;        /* Brightness for FULL state */
     int brightness_dim;         /* Brightness for DIMMED state */
-    uint32_t dim_timeout_ms;    /* Ms before FULL -> DIMMED */
-    uint32_t off_timeout_ms;    /* Ms before DIMMED -> OFF */
+    uint32_t dim_timeout_sec;   /* Seconds before FULL -> DIMMED */
+    uint32_t off_timeout_sec;   /* Seconds before DIMMED -> OFF */
 } state_s;
 
 /*
  * Initialize state machine
  *
- * Sets state to STATE_FULL with last_touch_ms = 0
+ * Sets state to STATE_FULL with last_touch_sec = 0
  * Caller should call state_touch() immediately with current time
  *
  * Preconditions (caller must ensure):
  *   - brightness_full >= 0, brightness_dim >= 0
- *   - dim_timeout_ms < off_timeout_ms
- *   - off_timeout_ms <= INT_MAX (for poll() compatibility)
+ *   - dim_timeout_sec < off_timeout_sec
+ *   - off_timeout_sec <= INT_MAX / 1000 (for poll() compatibility)
  */
 void state_init(state_s *st, int brightness_full, int brightness_dim,
-                uint32_t dim_timeout_ms, uint32_t off_timeout_ms);
+                uint32_t dim_timeout_sec, uint32_t off_timeout_sec);
 
 /*
  * Handle touch event
  *
- * Updates last_touch_ms to now_ms
+ * Updates last_touch_sec to now_sec
  * Transitions to STATE_FULL if not already there
  *
  * Returns: new brightness value, or -1 if no change
  */
-int state_touch(state_s *st, uint32_t now_ms);
+int state_touch(state_s *st, uint32_t now_sec);
 
 /*
  * Check for timeout transition
@@ -60,15 +60,15 @@ int state_touch(state_s *st, uint32_t now_ms);
  *
  * Returns: new brightness value, or -1 if no change
  */
-int state_timeout(state_s *st, uint32_t now_ms);
+int state_timeout(state_s *st, uint32_t now_sec);
 
 /*
- * Get ms until next transition
+ * Get seconds until next transition
  *
- * Returns: ms until next state change, 0 if already due, -1 if none (OFF state)
- * Note: Return value fits in int if state_init() preconditions were met
+ * Returns: seconds until next state change, 0 if already due, -1 if none (OFF state)
+ * Note: Caller multiplies by 1000 for poll() timeout
  */
-int state_get_timeout_ms(const state_s *st, uint32_t now_ms);
+int state_get_timeout_sec(const state_s *st, uint32_t now_sec);
 
 /*
  * Get current brightness for state

@@ -76,11 +76,11 @@ help:
 # Cross-compilation targets for ARM
 arm32: version $(BUILD_DIR)
 	$(MAKE) clean-objs
-	$(MAKE) CC=arm-linux-gnueabihf-gcc CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -std=c99 -D_GNU_SOURCE -Iinclude -march=armv7-a -mfpu=neon" TARGET=$(BUILD_DIR)/touch-timeout-$(VERSION)-arm32 all
+	$(MAKE) CC=arm-linux-gnueabihf-gcc CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -std=c99 -D_GNU_SOURCE -Iinclude -march=armv7-a -mfpu=neon" LDFLAGS=-static TARGET=$(BUILD_DIR)/touch-timeout-$(VERSION)-arm32 all
 
 arm64: version $(BUILD_DIR)
 	$(MAKE) clean-objs
-	$(MAKE) CC=aarch64-linux-gnu-gcc CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -std=c99 -D_GNU_SOURCE -Iinclude -march=armv8-a" TARGET=$(BUILD_DIR)/touch-timeout-$(VERSION)-arm64 all
+	$(MAKE) CC=aarch64-linux-gnu-gcc CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -std=c99 -D_GNU_SOURCE -Iinclude -march=armv8-a" LDFLAGS=-static TARGET=$(BUILD_DIR)/touch-timeout-$(VERSION)-arm64 all
 
 # Deploy targets (require RPI=<ip>)
 deploy-arm32:

@@ -53,11 +53,11 @@ src/
 
 ## Module Interfaces
 
-**state.h** - Pure state machine (caller provides time):
+**state.h** - Pure state machine (caller provides time in seconds):
 - `state_init()` - Initialize with brightness and timeout values
-- `state_touch(now_ms)` - Handle touch, return new brightness or -1
-- `state_timeout(now_ms)` - Check timeout, return new brightness or -1
-- `state_get_timeout_ms(now_ms)` - Return ms until next transition
+- `state_touch(now_sec)` - Handle touch, return new brightness or -1
+- `state_timeout(now_sec)` - Check timeout, return new brightness or -1
+- `state_get_timeout_sec(now_sec)` - Return seconds until next transition
 
 ## Event Loop
 
