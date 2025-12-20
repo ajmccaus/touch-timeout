@@ -30,8 +30,25 @@ echo "# Duration: ${DURATION}s"
 echo "# PID: $pid"
 echo ""
 
+# Memory measurement function
+#
+# Uses smaps_rollup instead of ps/VmRSS because on Linux 5.x with static binaries,
+# VmRSS only counts anonymous pages (~4 KB) while smaps_rollup Rss correctly
+# includes file-backed Private_Clean pages from the binary (~320 KB code section).
+# The smaps Rss value represents actual physical RAM usage.
+#
+# See doc/PROJECT-HISTORY.md for details on this kernel accounting quirk.
+get_mem_kb() {
+    local p=$1
+    if [ -f /proc/$p/smaps_rollup ]; then
+        awk '/^Rss:/ {print $2; exit}' /proc/$p/smaps_rollup 2>/dev/null
+    else
+        ps -o rss= -p "$p" 2>/dev/null | tr -d ' '
+    fi
+}
+
 # Capture start state
-mem_start=$(ps -o rss= -p "$pid" 2>/dev/null | tr -d ' ')
+mem_start=$(get_mem_kb "$pid")
 fd_start=$(ls /proc/$pid/fd 2>/dev/null | wc -l)
 write_start=$(awk '/^write_bytes:/ {print $2; exit}' /proc/$pid/io 2>/dev/null || echo "N/A")
 
@@ -58,7 +75,7 @@ done
 echo " done"
 
 # Capture end state
-mem_end=$(ps -o rss= -p "$pid" 2>/dev/null | tr -d ' ')
+mem_end=$(get_mem_kb "$pid")
 fd_end=$(ls /proc/$pid/fd 2>/dev/null | wc -l)
 write_end=$(awk '/^write_bytes:/ {print $2; exit}' /proc/$pid/io 2>/dev/null || echo "N/A")
 
@@ -87,4 +104,4 @@ else
     echo "SD_WRITE_BYTES=N/A"
 fi
 echo ""
-echo "# Compare to README claims: CPU <0.05%, Memory ~0.2MB, SD writes ~0"
+echo "# Targets: CPU ~0%, Memory <0.5MB, SD writes = 0, FD delta = 0"

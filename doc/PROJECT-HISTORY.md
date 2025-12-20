@@ -187,6 +187,47 @@ For developers using AI assistance:
 
 5. **Keep context clean.** Messy context produces messy output.
 
+## Technical Notes
+
+### Memory Measurement on Linux 5.x (December 2024)
+
+When measuring memory usage of the static binary on HifiBerryOS (Linux 5.15, Buildroot),
+we discovered a discrepancy between standard tools and actual memory consumption:
+
+| Source | Value | What it measures |
+|--------|-------|------------------|
+| `ps -o rss` / VmRSS | 4 KB | Anonymous pages only |
+| `/proc/PID/smaps_rollup Rss` | 360 KB | All resident pages |
+
+**Root cause:** On Linux 5.x with statically-linked binaries, the kernel's VmRSS
+(and therefore `ps`, `top`, `htop`) only counts anonymous pages (heap, stack, dirty data).
+It does NOT count Private_Clean file-backed pages from the executable's code section,
+even though these pages ARE resident in physical RAM.
+
+**Memory breakdown from smaps:**
+```
+Code section:  320 KB (Private_Clean, file-backed from binary)
+Data section:   16 KB (8 KB Private_Dirty + 8 KB rodata)
+Heap:           ~8 KB
+Stack:         ~16 KB
+Total Rss:    ~360 KB
+```
+
+**Why this matters:**
+- Standard tools report 4 KB, but 360 KB of physical RAM is actually consumed
+- The code pages ARE using RAM and would contribute to memory pressure
+- The kernel could reclaim them (they're clean copies of the binary), but hasn't
+
+**For performance testing:** Use `smaps_rollup` for accurate measurements.
+See `scripts/test-performance.sh` for the implementation.
+
+**Future optimization opportunity:** The 320 KB code section is large for a simple daemon.
+This could be reduced by:
+- Enabling `-Os` optimization instead of `-O2`
+- Stripping more aggressively
+- Using dynamic linking (trades binary size for shared library overhead)
+- Reviewing if all code paths are necessary
+
 ## References
 
 - [CHANGELOG.md](../CHANGELOG.md) — Version history with context

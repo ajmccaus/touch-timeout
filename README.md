@@ -29,7 +29,7 @@ make && sudo make install
 
 - **Works out-of-box** - sensible defaults, no configuration required
 - **Configurable via CLI** - all options available as command-line arguments
-- **Power efficient** - <0.05% CPU usage during idle (poll-based, zero CPU when waiting)
+- **Power efficient** - zero CPU when idle (poll-based, no polling loops)
 - **External wake support** - SIGUSR1 for shairport-sync integration
 - **Hardware-aware** - respects display max brightness, prevents flicker
 - Systemd integration with graceful shutdown
@@ -83,7 +83,7 @@ See [INSTALLATION.md - Configuration](doc/INSTALLATION.md#configuration) for mor
 
 ## Performance
 
-Optimized for 24/7 embedded operation: <0.05% CPU idle, ~200 KB memory, instant touch response.
+Optimized for 24/7 embedded operation: zero CPU when idle, ~360 KB memory, zero SD card writes, instant touch response.
 
 ## Scope & Non-Goals
 

@@ -9,10 +9,50 @@
 #   - Version consistency
 #   - CLI argument handling
 #
-# MANUAL TESTS (require real RPi):
-#   [ ] Deploy: make deploy-arm64 RPI=<IP>
-#   [ ] Verify: ssh root@<IP> 'systemctl status touch-timeout'
-#   [ ] Touch screen, verify wake from DIMMED/OFF states
+# MANUAL TESTS (require real RPi with 7" touchscreen):
+#
+#   Prerequisites:
+#     export RPI=<ip-address>
+#     make deploy-arm32 RPI=$RPI MANUAL=1
+#
+#   1. SERVICE STATUS (verify current installation)
+#      [ ] ssh root@$RPI 'systemctl status touch-timeout'
+#          - Active: active (running)
+#          - No errors in recent logs
+#
+#   2. STATE TRANSITIONS (use short timeout for testing)
+#      [ ] ssh root@$RPI 'systemctl stop touch-timeout'
+#      [ ] ssh root@$RPI '/run/touch-timeout-staging/touch-timeout-*-arm32 -t 10 -v &'
+#          - Screen starts at full brightness
+#      [ ] Wait ~5 seconds
+#          - Screen dims (FULL -> DIMMED logged)
+#      [ ] Wait ~5 more seconds
+#          - Screen turns off (DIMMED -> OFF logged)
+#      [ ] Touch screen
+#          - Screen wakes to full brightness (Touch -> FULL logged)
+#
+#   3. SIGUSR1 WAKE (external wake signal)
+#      [ ] Wait for screen to dim or turn off
+#      [ ] ssh root@$RPI 'pkill -USR1 -f touch-timeout'
+#          - Screen wakes to full brightness
+#          - Log shows: SIGUSR1 -> FULL
+#
+#   4. PERFORMANCE (run for 30-60 seconds)
+#      [ ] scp scripts/test-performance.sh root@$RPI:/run/
+#      [ ] ssh root@$RPI 'bash /run/test-performance.sh 30'
+#          - CPU_AVG_PCT < 0.1 (target: ~0.0 when idle)
+#          - MEM_END_MB < 1.0 (target: ~0.2 MB)
+#          - SD_WRITE_BYTES = 0 (no SD card writes)
+#          - FD_DELTA = 0 (no file descriptor leaks)
+#
+#   5. CLEANUP
+#      [ ] ssh root@$RPI 'pkill -f touch-timeout'
+#      [ ] ssh root@$RPI 'systemctl start touch-timeout'
+#          - Daemon running with default config
+#
+#   6. INSTALL (if all tests pass)
+#      [ ] ssh root@$RPI '/run/touch-timeout-staging/install.sh'
+#          - Installs to /usr/bin and restarts service
 #
 
 set -e
