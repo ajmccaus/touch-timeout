@@ -1,4 +1,4 @@
-# Installation Guide - touch-timeout v2.0
+# Installation Guide - touch-timeout v0.7
 
 Comprehensive guide for installing touch-timeout on Raspberry Pi.
 
@@ -180,39 +180,22 @@ ssh <USER>@<IP_ADDRESS> "echo OK"
 
 ## Configuration
 
-**The daemon works out-of-box** - no configuration required! See [README.md - Configuration](../README.md#configuration) for default values.
+The daemon works out-of-box with sensible defaults. See [README.md - Configuration](../README.md#configuration) for CLI options and customization via systemd.
 
-To customize, choose one of the options below:
+### External Wake (shairport-sync)
 
-### Option 1: Config File
+Wake display from external programs:
 
-Create `/etc/touch-timeout.conf`:
-
-```ini
-# All values optional - only specify what you want to change
-brightness=160        # 15-255, default 150
-off_timeout=600       # seconds, default 300
-dim_percent=20        # 1-100, default 10
-backlight=rpi_backlight
-device=event0
-```
-
-Then restart: `sudo systemctl restart touch-timeout.service`
-
-### Option 2: CLI Arguments
-
-Override via systemd:
 ```bash
-sudo systemctl edit touch-timeout.service
+pkill -USR1 touch-timeout
 ```
 
-```ini
-[Service]
-ExecStart=
-ExecStart=/usr/bin/touch-timeout 200 600 rpi_backlight event0
+**shairport-sync config (`/etc/shairport-sync.conf`):**
 ```
-
-Then: `sudo systemctl daemon-reload && sudo systemctl restart touch-timeout.service`
+sessioncontrol = {
+    run_this_before_play_begins = "/usr/bin/pkill -USR1 touch-timeout";
+};
+```
 
 ### Finding Your Touchscreen Device
 
@@ -317,7 +300,6 @@ journalctl -u touch-timeout.service -n 50
 
 **Check that:**
 - Symlink target binary exists: `ls -l /usr/bin/touch-timeout`
-- `/etc/touch-timeout.conf` is valid
 - Binary is executable
 - Device `/dev/input/event0` exists (or configured device)
 - Backlight device exists: `ls /sys/class/backlight/`
@@ -335,7 +317,17 @@ journalctl -u touch-timeout.service -n 50
 
 ## Rollback (Remote Deployment)
 
-List available versions and switch:
+**List available versions:**
+```bash
+make rollback-list RPI=<IP_ADDRESS>
+```
+
+**Rollback to a specific version:**
+```bash
+make rollback RPI=<IP_ADDRESS> TO=0.6.0
+```
+
+**Manual rollback (on RPi):**
 ```bash
 ls -lh /usr/bin/touch-timeout*
 sudo ln -sf /usr/bin/touch-timeout-<VERSION>-<ARCH> /usr/bin/touch-timeout
@@ -353,15 +345,10 @@ sudo rm /usr/bin/touch-timeout* /etc/systemd/system/touch-timeout.service
 sudo systemctl daemon-reload
 ```
 
-Optionally remove config:
-```bash
-sudo rm /etc/touch-timeout.conf
-```
-
 ---
 
 ## Additional Resources
 
 - **README.md**: Feature overview and project description
-- **ARCHITECTURE.md**: v2.0 architecture and design decisions
+- **ARCHITECTURE.md**: Architecture and design decisions
 - **Makefile**: Build system reference and targets

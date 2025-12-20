@@ -1,15 +1,21 @@
 # touch-timeout
 Lightweight touchscreen backlight manager for Raspberry Pi 7" displays. Automatically dims and powers off the display during inactivity, instantly restoring on touch. Optimized for minimal Linux distributions like HifiBerry OS.
 
-**Version:** 2.0.0 | [CHANGELOG](CHANGELOG.md) | [ARCHITECTURE](doc/ARCHITECTURE.md)
+**Version:** 0.7.0 | [CHANGELOG](CHANGELOG.md) | [ARCHITECTURE](doc/ARCHITECTURE.md)
 
-## Getting Started
+## Quick Start
 
-Choose your installation method:
+**From your Linux/WSL2 development machine:**
 
-### For Raspberry Pi Users
+```bash
+git clone https://github.com/ajmccaus/touch-timeout.git
+cd touch-timeout
+make deploy-arm64 RPI=<IP_ADDRESS>
+```
 
-**Installing directly on your Raspberry Pi:**
+This cross-compiles and deploys to your Raspberry Pi in one step. See [INSTALLATION.md](doc/INSTALLATION.md) for prerequisites and options.
+
+**Or build directly on Raspberry Pi:**
 
 ```bash
 git clone https://github.com/ajmccaus/touch-timeout.git
@@ -17,66 +23,88 @@ cd touch-timeout
 make && sudo make install
 ```
 
-→ **[Complete guide: INSTALLATION.md - Method 1](doc/INSTALLATION.md#method-1-direct-installation-on-raspberry-pi)**
-
-### For Developers
-
-**Cross-compile on Linux/WSL2 and deploy to Raspberry Pi:**
-
-```bash
-make deploy-arm64 RPI=<IP_ADDRESS>
-```
-
-→ **[Complete guide: INSTALLATION.md - Method 2](doc/INSTALLATION.md#method-2-remote-deployment-cross-compilation)**
-
 ---
 
 ## Features
 
-- **Works out-of-box with sensible defaults** - no configuration required!
-- **Configurable dimming**: Percentage-based dim timing (1-100% of off timeout)
-- **Power efficient**: <0.05% CPU usage during idle
-- **Hardware-optimized**: Respects display max brightness, prevents flicker
-- **Robust**: Handles missed poll cycles, system suspend/resume
+- **Works out-of-box** - sensible defaults, no configuration required
+- **Configurable via CLI** - all options available as command-line arguments
+- **Power efficient** - zero CPU when idle (poll-based, no polling loops)
+- **External wake support** - SIGUSR1 for shairport-sync integration
+- **Hardware-aware** - respects display max brightness, prevents flicker
 - Systemd integration with graceful shutdown
 
 ## Default Behavior
 
 | Event | Action |
 |-------|--------|
-| **Service start** | Uses hardcoded defaults or `/etc/touch-timeout.conf` if present (see [Configuration](#configuration)) |
+| **Service start** | Full brightness (150), ready for touch |
 | **Touch detected** | Restores full brightness, resets idle timer |
-| **Idle (10% of timeout)** | Dims to `user_brightness ÷ 10` (minimum 10) |
-| **Idle (100% of timeout)** | Powers off display (brightness = 0) |
-| **Invalid config** | Logs warning, falls back to defaults |
-| **Systemd stop** | Gracefully closes file descriptors |
-
-## Performance
-
-Optimized for 24/7 embedded operation: <0.05% CPU idle, ~200 KB memory, instant touch response.
-
-See [ARCHITECTURE.md - Performance Metrics](doc/ARCHITECTURE.md#performance-metrics) for benchmarks.
+| **Idle 30s** | Dims to 10% brightness (minimum 10) |
+| **Idle 5 min** | Powers off display (brightness = 0) |
+| **SIGUSR1** | Wakes display (for shairport-sync integration) |
+| **Systemd stop** | Restores brightness, graceful shutdown |
 
 ## Configuration
 
-**Hardcoded Defaults:**
-- `brightness=150` - Active screen brightness (15-255, recommend ≤200 for RPi official 7" touchscreen)
-- `off_timeout=300` - 5 minutes until screen off (minimum 10 seconds)
-- `dim_percent=10` - Dims at 10% of timeout (e.g., 30s for default 300s timeout)
-- `backlight=rpi_backlight` - RPi official 7" touchscreen backlight device
-- `device=event0` - First input device
+**Defaults work for most setups.** To customize, use systemd override:
 
-**To customize:** See [INSTALLATION.md - Configuration](doc/INSTALLATION.md#configuration) for complete examples:
-- Creating `/etc/touch-timeout.conf` (copy/paste template provided)
-- Using CLI arguments in systemd service file
+```bash
+sudo systemctl edit touch-timeout
+```
 
-## Future Roadmap
+Add your options:
 
-See [ROADMAP.md](doc/ROADMAP.md) for planned features.
+```ini
+[Service]
+ExecStart=
+ExecStart=/usr/bin/touch-timeout -b 200 -t 600
+```
 
-## Support Policy
-This is a learning project maintained in my spare time.
-- Bug reports: Welcomed with reproduction steps
-- Feature requests: Considered but not guaranteed
+**CLI Options:**
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-b, --brightness=N` | Full brightness (15-255) | 150 |
+| `-t, --timeout=N` | Off timeout in seconds (10-86400) | 300 |
+| `-d, --dim-percent=N` | Dim at N% of timeout (1-100) | 10 |
+| `-l, --backlight=NAME` | Backlight device | rpi_backlight |
+| `-i, --input=NAME` | Input device | event0 |
+| `-v, --verbose` | Verbose logging | |
+
+**External Wake (shairport-sync):**
+
+```bash
+# Wake display programmatically
+pkill -USR1 touch-timeout
+```
+
+See [INSTALLATION.md - Configuration](doc/INSTALLATION.md#configuration) for more examples.
+
+## Performance
+
+Optimized for 24/7 embedded operation: zero CPU when idle, ~360 KB memory, zero SD card writes, instant touch response.
+
+## Scope & Non-Goals
+
+This daemon manages **touchscreen timeout only**.
+
+**Out of scope:**
+- Keyboard/mouse input (use DPMS/xscreensaver)
+- Multi-device input monitoring
+- Adaptive brightness / ambient light sensing
+- Audio activity monitoring (use SIGUSR1 integration instead)
+- Web API / D-Bus interface
+
+**Contributing:** Before proposing features, consider: Does this solve a real problem for touchscreen users? Can it be done with SIGUSR1 or existing configuration?
+
+## About This Project
+
+This is a learning project and case study in non-expert AI-assisted software development. It chronicles what happens when you use AI to build software without proper design specifications—and the lessons learned from untangling the result.
+
+See [PROJECT-HISTORY.md](doc/PROJECT-HISTORY.md) for the full story.
+
+**Support:**
+- Bug reports welcomed with reproduction steps
+- Feature requests considered but not guaranteed
 - PRs: No guarantees on response time
-- Commercial support: Not available

@@ -1,99 +1,96 @@
 ---
-version: "2.0.0"
-updated: 2025-12-14
+version: "0.7"
+updated: 2025-12-19
 ---
 
 # Touch-Timeout Architecture
 
 Current implementation state. This document is descriptive (how it DOES work).
 
-For design intent and principles, see [DESIGN.md](DESIGN.md).
-
 ## Module Structure
+
+Simplified 2-module architecture:
 
 ```
 src/
-├── config.c/h      # Table-driven configuration with validation
-├── display.c/h     # Display/backlight hardware abstraction
-├── input.c/h       # Touch input device abstraction
-├── state.c/h       # State machine logic (FULL→DIMMED→OFF)
-├── timer.c/h       # POSIX timerfd abstraction (CLOCK_MONOTONIC)
-└── main.c          # Event loop with systemd integration
+├── main.c          # CLI, device I/O, event loop
+└── state.c/h       # Pure state machine (no I/O)
 ```
 
-## Data Flow
+## Block Diagram
 
 ```
-[Input HAL] ─────▶ [Main Loop] ◀───── [Timer HAL]
-(src/input.c)         │              (src/timer.c)
-                      │
-                      ▼
-               [State Machine]
-               (src/state.c)
-                      │
-                      ▼
-               [Display HAL]
-              (src/display.c)
+                              main.c
+    ┌────────────────────────────────────────────────────────────┐
+    │                                                            │
+    │  ┌──────────────┐  ┌──────────────┐  ┌─────────────────┐  │
+    │  │ CLI Parsing  │  │  Device I/O  │  │   Event Loop    │  │
+    │  │              │  │              │  │                 │  │
+    │  │ parse_args() │  │ open_*()     │  │ poll() on input │
+    │  │ usage()      │  │ set_bright() │  │ ├─ POLLIN: touch│  │
+    │  │              │  │ drain_*()    │  │ └─ timeout: dim │  │
+    │  └──────────────┘  └──────────────┘  └─────────────────┘  │
+    │                                               │            │
+    │                                               │ state_*()  │
+    │                                               ▼            │
+    └───────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+    ┌────────────────────────────────────────────────────────────┐
+    │                        state.c/h                           │
+    │                                                            │
+    │  Pure Moore State Machine - No I/O, No Time Calls          │
+    │                                                            │
+    │  ┌─────────┐      ┌───────────┐      ┌──────────┐         │
+    │  │  FULL   │─────▶│  DIMMED   │─────▶│   OFF    │         │
+    │  │ (bright)│      │   (dim)   │      │   (0)    │         │
+    │  └─────────┘      └───────────┘      └──────────┘         │
+    │       ▲                 │                  │               │
+    │       └─────────────────┴──────────────────┘               │
+    │                    touch event                             │
+    └────────────────────────────────────────────────────────────┘
 ```
 
 ## Module Interfaces
 
-See source headers (`.h` files) for complete API signatures.
-
-**state.h:**
+**state.h** - Pure state machine (caller provides time in seconds):
 - `state_init()` - Initialize with brightness and timeout values
-- `state_handle_event()` - Process TOUCH or TIMEOUT event
-- `state_get_current()` - Return current state
-- `state_get_brightness()` - Return current brightness
-- `state_get_next_timeout()` - Return seconds until next transition
+- `state_touch(now_sec)` - Handle touch, return new brightness or -1
+- `state_timeout(now_sec)` - Check timeout, return new brightness or -1
+- `state_get_timeout_sec(now_sec)` - Return seconds until next transition
+- `state_get_brightness()` - Return brightness for current state
+- `state_get_current()` - Return current state enum
 
-**config.h:**
-- `config_init()` - Initialize with defaults
-- `config_load()` - Load from file
-- `config_set_value()` - Override individual values
+## Event Loop
 
-**display.h:**
-- `display_open()` / `display_close()` - Lifecycle
-- `display_set_brightness()` - Set brightness (cached)
-- `display_get_brightness()` - Read current brightness
-- `display_get_max_brightness()` - Read hardware maximum
+The main loop uses blocking I/O for zero CPU idle:
 
-**input.h:**
-- `input_open()` / `input_close()` - Lifecycle
-- `input_get_fd()` - Return pollable file descriptor
-- `input_has_events()` - Check and drain pending events
+1. **Wait**: poll() blocks on input fd with timeout from state machine
+2. **Touch event**: Drain events, notify state machine, apply brightness if changed
+3. **Timeout**: Notify state machine, apply brightness if changed
+4. **Signal**: SIGUSR1 wakes display; SIGTERM/SIGINT trigger graceful shutdown
 
-**timer.h:**
-- `timer_create_ctx()` / `timer_destroy()` - Lifecycle
-- `timer_arm()` - Set timeout in seconds
-- `timer_get_fd()` - Return pollable file descriptor
-- `timer_check_expiration()` - Check and clear timer event
+Loop exits when `g_running` becomes false (signal received).
 
-## Event Loop Implementation
+**Key design choices:**
+- Single `poll()` with timeout (no timerfd)
+- Pure state machine - caller owns time via `CLOCK_MONOTONIC`
+- Brightness caching - avoid redundant sysfs writes
+- SIGUSR1 wake support for external integration
 
-Located in `main.c`:
+## Build System
 
-1. **Initialization** (lines ~50-120)
-   - Load config, open HAL modules, init state machine
-   - Set initial brightness, arm timer
+See `make help` or Makefile for available targets. Key flags: `-std=c99 -D_GNU_SOURCE -Wall -Wextra`
 
-2. **Poll loop** (lines ~130-180)
-   - Block on input_fd and timer_fd
-   - Process events, update state, apply brightness
+## Test Infrastructure
 
-3. **Cleanup** (lines ~190-210)
-   - Restore brightness, close modules
+**Test executables:**
+- `tests/test_state` - State machine tests (48 tests)
 
-## Configuration
-
-**File:** `/etc/touch-timeout.conf`
-
-**Parameters:** See [README.md - Configuration](../README.md#configuration)
-
-**Table-driven parsing:**
-- Each parameter has a descriptor in `config_params[]` array
-- Single parsing function handles all types
-- Automatic validation against min/max constraints
+**Testing approach:**
+- Pure state machine = no mocking needed
+- Pass mock timestamps directly to functions
+- Coverage target: 95%+
 
 ## Systemd Integration
 
@@ -101,74 +98,19 @@ Located in `main.c`:
 
 - `Type=simple` - Compatible with minimal systems
 - `Restart=on-failure` - Auto-restart on crashes
-- `LogLevelMax=info` - Filter DEBUG messages (zero runtime writes)
+- `LogLevelMax=info` - Filter DEBUG messages
 
 **Optional features** (requires libsystemd at build time):
-- sd_notify() for startup confirmation
-- Watchdog pinging
-
-## Build System
-
-**Makefile targets:**
-
-| Target | Output | Description |
-|--------|--------|-------------|
-| `make` | `build/touch-timeout-{ver}-native` | Native build |
-| `make arm32` | `build/touch-timeout-{ver}-arm32` | Cross-compile ARM 32-bit |
-| `make arm64` | `build/touch-timeout-{ver}-arm64` | Cross-compile ARM 64-bit |
-| `make deploy-arm64 RPI=<ip>` | - | Build + deploy + install |
-| `make test` | Test executables | Run unit tests |
-| `make coverage` | Coverage report | Generate coverage |
-| `make clean` | - | Clean build artifacts |
-
-**Compiler flags:**
-- `-std=c17 -D_POSIX_C_SOURCE=200809L`
-- `-Wall -Wextra -Werror`
-
-## Test Infrastructure
-
-**Test executables:**
-- `tests/test_config` - Configuration module tests
-- `tests/test_state` - State machine tests
-
-**Test counts:**
-- Config: 44 tests (parsing, validation, security)
-- State: 21 tests (transitions, edge cases)
-
-**Performance testing:** `scripts/test-performance.sh` (see [INSTALLATION.md](INSTALLATION.md#performance-data-collection))
-
-## Deployment
-
-**Scripts:**
-- `scripts/deploy.sh` - Transfer and install to RPi (called by Makefile)
-- `scripts/install.sh` - Install on target system
-
-**Staging:** `/run/touch-timeout-staging/` (tmpfs)
-
-See [INSTALLATION.md](INSTALLATION.md) for deployment procedures.
-
-## Performance Metrics
-
-Measured on Raspberry Pi 4 after 72+ hours continuous operation:
-
-| Metric | Value |
-|--------|-------|
-| CPU (idle) | < 0.05% |
-| Memory (RSS) | ~200 KB |
-| Touch latency | ~45 ms |
-| SD writes/day | ~15 |
-| File descriptors | 3 |
+- `sd_notify()` for startup confirmation
 
 ## Known Limitations
 
-1. **Linux-only** - Requires timerfd, input subsystem, sysfs
+1. **Linux-only** - Requires input subsystem, sysfs
 2. **Single display** - No multi-display support
 3. **Fixed device paths** - `/sys/class/backlight`, `/dev/input`
 4. **Touchscreen only** - Keyboard/mouse out of scope
 
 ## References
 
-- [DESIGN.md](DESIGN.md) - Design intent and principles
-- [ROADMAP.md](ROADMAP.md) - Future plans
 - [README.md](../README.md) - User documentation
 - [INSTALLATION.md](INSTALLATION.md) - Deployment guide

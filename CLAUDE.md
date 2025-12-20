@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**Current version:** 0.7.0
+
 ## Project Overview
 
 **touch-timeout** is a lightweight touchscreen backlight manager daemon for Raspberry Pi 7" displays. It automatically dims and powers off the display during inactivity and instantly restores brightness on touch.
@@ -25,8 +27,8 @@ touch or external signal (e.g., from shairport-sync).
 4. Wake and restore brightness on touch event
 5. Wake on external signal (IPC from other programs)
 6. Restore brightness on graceful shutdown
-7. Integrate with systemd (Type=simple)
-8. Support foreground mode for development/debugging
+7. Integrate with systemd
+8. Support verbose mode for development/debugging
 
 ### Non-Functional Requirements
 - Zero CPU when idle (blocking I/O only, no polling)
@@ -38,7 +40,12 @@ touch or external signal (e.g., from shairport-sync).
 
 This project follows production-ready embedded C daemon standards to ensure robust, maintainable, and robust code. Think DRY and self documenting. 
 
-Language: C99
+All coding must follow best coding practices and patterns, not just work by accident:
+  - No magic numbers         
+  - Compile-time safety checks where possible                                                                  
+  - Modern C patterns (EXIT_*, snprintf etc.)                                                               
+  - Consistent error handling      
+  - Spell-check identifiers 
 
 ## Naming Conventions
 
@@ -48,9 +55,8 @@ Language: C99
 - Avoids POSIX `_t` suffix conflicts
 
 **Functions:**
-- Public: `module_verb()` or `module_verb_noun()` (e.g., `state_init()`, `config_load()`)
-- Static: Same pattern for consistency (e.g., `config_trim()`, `config_find_param()`)
-- HAL pattern: `module_open()`, `module_close()`, `module_get_fd()`
+- Public: `module_verb()` or `module_verb_noun()` (e.g., `state_init()`, `state_touch()`)
+- Static: Same pattern for consistency (e.g., `parse_args()`, `set_brightness()`)
 
 **Variables:**
 - Globals: `g_` prefix (e.g., `g_running`, `g_config`)
@@ -59,7 +65,7 @@ Language: C99
 
 ## Security Guidelines
 
-- Platform: Linux-specific (timerfd, signalfd, poll allowed)
+- Platform: Linux-specific (poll, input subsystem, sysfs)
 - Security: Follow CERT C principles for input validation and resource cleanup
 
 ## Development Workflow
@@ -93,7 +99,7 @@ See [INSTALLATION.md] for complete build instructions and test details.
 
 **Commands:**
 - `make test` - Run all unit tests
-- `scripts/test-deployment.sh` - Validate deployment changes (<5 seconds)
+- `scripts/test-integration.sh` - Integration tests (infra + CLI validation)
 
 **Manual verification** (on device, minimize):
 - Touch responsiveness after deployment
@@ -107,25 +113,6 @@ See [INSTALLATION.md] for complete build instructions and test details.
 - D-Bus interface
 - Config file parsing
 
-## Project Structure
-
-```
-touch-timeout/
-├── README.md           # User entry point, feature overview
-├── CHANGELOG.md        # Release history
-├── CLAUDE.md           # AI instructions (this file)
-├── doc/
-│   ├── ARCHITECTURE.md # Current state (descriptive, per-release)
-│   ├── INSTALLATION.md # User install guide
-│   ├── ROADMAP.md      # Future plans
-│   └── plans/          # Version-specific implementation plans
-│       └── archive/    # Completed plans (record keeping)
-├── src/                # Source code
-├── tests/              # C unit test source files
-├── scripts/            # Shell scripts (deployment, testing)
-└── systemd/            # Service configuration
-```
-
 **Separation of Concerns:**
 - **Root**: Entry points only (README, CHANGELOG, CLAUDE.md)
 - **doc/**: All documentation (user and developer)
@@ -135,7 +122,8 @@ touch-timeout/
 ## Architecture
 
 **Key patterns when modifying code:**
-- **Event-Driven I/O**: poll() on input + timer fds, zero CPU while idle
+- **Event-Driven I/O**: poll() on input fd with timeout, zero CPU while idle
 - **Pure state machine**: state.c has zero I/O dependencies (enables unit testing)
 
 **State transitions:** FULL → DIMMED (at dim_percent timeout) → OFF (at off_timeout)
+

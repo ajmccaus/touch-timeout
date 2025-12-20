@@ -1,38 +1,26 @@
-# Makefile for touch-timeout daemon (modular version 2.0)
+# Makefile for touch-timeout daemon
 #
-# Build modular C daemon with:
-# - Separate compilation units for each module
+# Simplified 2-module architecture:
+# - main.c: CLI, device I/O, event loop
+# - state.c: Pure state machine (no I/O)
 # - Optional systemd support
-# - Unit tests with mocking
-# - Code coverage reporting
 
 # Version management (single source of truth)
-VERSION_MAJOR = 2
-VERSION_MINOR = 0
+VERSION_MAJOR = 0
+VERSION_MINOR = 7
 VERSION_PATCH = 0
 VERSION = $(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_PATCH)
 
 CC = gcc
-CFLAGS = -O2 -Wall -Wextra -Wno-unused-parameter -std=c17 -D_POSIX_C_SOURCE=200809L -Iinclude
+CFLAGS = -O2 -Wall -Wextra -Wno-unused-parameter -std=c99 -D_GNU_SOURCE -Iinclude
 LDFLAGS =
 BUILD_DIR = build
 TARGET = $(BUILD_DIR)/touch-timeout-$(VERSION)-native
 
-# Detect OS - add mock includes for non-Linux systems
-UNAME_S := $(shell uname -s)
-ifneq ($(UNAME_S),Linux)
-    CFLAGS += -I./tests/mocks
-    $(info Building on $(UNAME_S) with mock headers)
-endif
-
 # Source files
 SRC_DIR = src
 SRCS = $(SRC_DIR)/main.c \
-       $(SRC_DIR)/config.c \
-       $(SRC_DIR)/display.c \
-       $(SRC_DIR)/input.c \
-       $(SRC_DIR)/state.c \
-       $(SRC_DIR)/timer.c
+       $(SRC_DIR)/state.c
 
 OBJS = $(SRCS:.c=.o)
 
@@ -51,9 +39,8 @@ endif
 PREFIX = /usr
 BINDIR = $(PREFIX)/bin
 SYSTEMD_UNIT_DIR = /etc/systemd/system
-CONFIG_DIR = /etc
 
-.PHONY: all clean install uninstall test coverage version help arm32 arm64 clean-all deploy-arm32 deploy-arm64
+.PHONY: all clean install uninstall test coverage version help arm32 arm64 clean-all deploy-arm32 deploy-arm64 rollback-list rollback
 
 all: version $(BUILD_DIR) $(TARGET)
 
@@ -71,10 +58,17 @@ help:
 	@echo "  make deploy-arm64 RPI=<ip> MANUAL=1     - Build + deploy only"
 	@echo "  make deploy-arm64 RPI=<ip> RPI_USER=pi  - Deploy as non-root user"
 	@echo ""
+	@echo "Rollback:"
+	@echo "  make rollback-list RPI=<ip>             - List installed versions"
+	@echo "  make rollback RPI=<ip> TO=X.Y.Z         - Rollback to specific version"
+	@echo ""
+	@echo "Local (on RPi):"
+	@echo "  make install         - Install with versioned binary + symlink"
+	@echo "  make uninstall       - Remove all versions and service"
+	@echo ""
 	@echo "Other:"
 	@echo "  make test            - Run unit tests"
 	@echo "  make coverage        - Generate coverage report"
-	@echo "  make install         - Install locally (on RPi)"
 	@echo "  make clean           - Remove build artifacts"
 	@echo ""
 	@echo "Output: $(BUILD_DIR)/touch-timeout-$(VERSION)-{native,arm32,arm64}"
@@ -82,11 +76,11 @@ help:
 # Cross-compilation targets for ARM
 arm32: version $(BUILD_DIR)
 	$(MAKE) clean-objs
-	$(MAKE) CC=arm-linux-gnueabihf-gcc CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -std=c17 -D_POSIX_C_SOURCE=200809L -Iinclude -march=armv7-a -mfpu=neon" TARGET=$(BUILD_DIR)/touch-timeout-$(VERSION)-arm32 all
+	$(MAKE) CC=arm-linux-gnueabihf-gcc CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -std=c99 -D_GNU_SOURCE -Iinclude -march=armv7-a -mfpu=neon" LDFLAGS=-static TARGET=$(BUILD_DIR)/touch-timeout-$(VERSION)-arm32 all
 
 arm64: version $(BUILD_DIR)
 	$(MAKE) clean-objs
-	$(MAKE) CC=aarch64-linux-gnu-gcc CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -std=c17 -D_POSIX_C_SOURCE=200809L -Iinclude -march=armv8-a" TARGET=$(BUILD_DIR)/touch-timeout-$(VERSION)-arm64 all
+	$(MAKE) CC=aarch64-linux-gnu-gcc CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -std=c99 -D_GNU_SOURCE -Iinclude -march=armv8-a" LDFLAGS=-static TARGET=$(BUILD_DIR)/touch-timeout-$(VERSION)-arm64 all
 
 # Deploy targets (require RPI=<ip>)
 deploy-arm32:
@@ -98,6 +92,24 @@ deploy-arm64:
 	@test -n "$(RPI)" || { echo "Usage: make deploy-arm64 RPI=<ip>"; exit 1; }
 	$(MAKE) arm64
 	scripts/deploy.sh $(RPI) $(BUILD_DIR)/touch-timeout-$(VERSION)-arm64
+
+# Rollback targets (require RPI=<ip>)
+RPI_USER ?= root
+
+rollback-list:
+	@test -n "$(RPI)" || { echo "Usage: make rollback-list RPI=<ip>"; exit 1; }
+	@echo "Installed versions on $(RPI):"
+	@ssh $(RPI_USER)@$(RPI) "ls -1 /usr/bin/touch-timeout-*-* 2>/dev/null || echo '  (none found)'"
+	@echo ""
+	@echo "Current: $$(ssh $(RPI_USER)@$(RPI) 'readlink /usr/bin/touch-timeout 2>/dev/null || echo "(not installed)"')"
+
+rollback:
+	@test -n "$(RPI)" || { echo "Usage: make rollback RPI=<ip> TO=X.Y.Z"; exit 1; }
+	@test -n "$(TO)" || { echo "TO=<version> required. Run: make rollback-list RPI=$(RPI)"; exit 1; }
+	@echo "Rolling back to version $(TO)..."
+	ssh $(RPI_USER)@$(RPI) "ls /usr/bin/touch-timeout-$(TO)-* >/dev/null 2>&1 || { echo 'Version $(TO) not found'; exit 1; }"
+	ssh $(RPI_USER)@$(RPI) "ln -sf /usr/bin/touch-timeout-$(TO)-* /usr/bin/touch-timeout && systemctl restart touch-timeout"
+	@echo "Rollback complete. Current: $$(ssh $(RPI_USER)@$(RPI) 'readlink /usr/bin/touch-timeout')"
 
 # Generate version.h from VERSION_* variables
 version:
@@ -133,12 +145,8 @@ $(TARGET): $(OBJS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 # Dependencies (headers)
-$(SRC_DIR)/main.o: $(SRC_DIR)/config.h $(SRC_DIR)/display.h $(SRC_DIR)/input.h $(SRC_DIR)/state.h $(SRC_DIR)/timer.h include/version.h
-$(SRC_DIR)/config.o: $(SRC_DIR)/config.h
-$(SRC_DIR)/display.o: $(SRC_DIR)/display.h $(SRC_DIR)/config.h
-$(SRC_DIR)/input.o: $(SRC_DIR)/input.h
+$(SRC_DIR)/main.o: $(SRC_DIR)/state.h include/version.h
 $(SRC_DIR)/state.o: $(SRC_DIR)/state.h
-$(SRC_DIR)/timer.o: $(SRC_DIR)/timer.h
 
 # Clean object files only (used between cross-compile targets)
 clean-objs:
@@ -163,25 +171,25 @@ test:
 coverage:
 	$(MAKE) -C tests coverage
 
-# Install to system
+# Install to system (versioned binary with symlink for rollback support)
 install: $(TARGET)
-	install -D -m 755 $(TARGET) $(DESTDIR)$(BINDIR)/touch-timeout
+	install -D -m 755 $(TARGET) $(DESTDIR)$(BINDIR)/touch-timeout-$(VERSION)-native
+	ln -sf touch-timeout-$(VERSION)-native $(DESTDIR)$(BINDIR)/touch-timeout
 	install -D -m 644 systemd/touch-timeout.service $(DESTDIR)$(SYSTEMD_UNIT_DIR)/touch-timeout.service
-	@echo "Installation complete. To enable service:"
-	@echo "  sudo systemctl daemon-reload"
-	@echo "  sudo systemctl enable touch-timeout.service"
-	@echo "  sudo systemctl start touch-timeout.service"
+	@echo "Installation complete: $(BINDIR)/touch-timeout -> touch-timeout-$(VERSION)-native"
 	@echo ""
-	@echo "Uses hardcoded defaults. To customize:"
-	@echo "  - Create /etc/touch-timeout.conf (see INSTALLATION.md)"
-	@echo "  - Or edit systemd service file with CLI arguments"
+	@echo "To enable service:"
+	@echo "  sudo systemctl daemon-reload"
+	@echo "  sudo systemctl enable --now touch-timeout.service"
+	@echo ""
+	@echo "To customize: sudo systemctl edit touch-timeout"
 
-# Uninstall from system
+# Uninstall from system (removes all versions)
 uninstall:
 	systemctl stop touch-timeout.service 2>/dev/null || true
 	systemctl disable touch-timeout.service 2>/dev/null || true
 	rm -f $(DESTDIR)$(BINDIR)/touch-timeout
+	rm -f $(DESTDIR)$(BINDIR)/touch-timeout-*-*
 	rm -f $(DESTDIR)$(SYSTEMD_UNIT_DIR)/touch-timeout.service
 	systemctl daemon-reload 2>/dev/null || true
 	@echo "Uninstallation complete."
-	@echo "Note: If you created /etc/touch-timeout.conf, it has been preserved."
