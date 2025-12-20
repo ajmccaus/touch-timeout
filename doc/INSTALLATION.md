@@ -221,7 +221,7 @@ sudo journalctl -u touch-timeout.service -f
 **Quick health check:**
 ```bash
 top -bn1 -p $(pgrep touch-timeout) | tail -1
-# Expected: <1% CPU, ~0.2MB RSS
+# Expected: <1% CPU, ~0.35MB RSS
 ```
 
 **Test touch responsiveness:**

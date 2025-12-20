@@ -189,6 +189,34 @@ For developers using AI assistance:
 
 ## Technical Notes
 
+### Performance Comparison: v0.4-0.6 → v0.7.0 (December 2025)
+
+**Test date:** 2025-12-19 (single 30-second measurement per version)
+
+The v0.7.0 rewrite shows improved resource usage compared to the v0.4-0.6 codebase:
+
+| Metric | v0.4-0.6 | v0.7.0 | Notes |
+|--------|----------|--------|-------|
+| Memory (KB) | 1,376 | 360 | **74% reduction** |
+| FD count | 7 | 5 | Removed timerfd |
+| CPU | ~0.4% | ~0.4% | Both effectively idle |
+| Memory growth | 0 | 0 | No leaks detected |
+| SD writes | 0 | 0 | No writes during idle |
+
+**Architectural changes driving improvements:**
+- Removed timerfd (2 fewer FDs)
+- Eliminated config file parser and HAL abstractions
+- Reduced from 6 modules (~900 lines) to 2 modules (~370 lines)
+- Simpler poll() loop with direct timeout calculation
+
+**Caveats:** Single measurement session. CPU values are within noise floor for an idle daemon.
+
+**v0.7.0 performance targets (met):**
+- CPU ~0% ✓
+- Memory <0.5MB ✓ (0.35MB actual)
+- SD writes = 0 ✓
+- FD delta = 0 ✓
+
 ### Memory Measurement on Linux 5.x (December 2024)
 
 When measuring memory usage of the static binary on HifiBerryOS (Linux 5.15, Buildroot),
