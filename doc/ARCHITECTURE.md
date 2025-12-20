@@ -58,6 +58,8 @@ src/
 - `state_touch(now_sec)` - Handle touch, return new brightness or -1
 - `state_timeout(now_sec)` - Check timeout, return new brightness or -1
 - `state_get_timeout_sec(now_sec)` - Return seconds until next transition
+- `state_get_brightness()` - Return brightness for current state
+- `state_get_current()` - Return current state enum
 
 ## Event Loop
 
@@ -83,7 +85,7 @@ See `make help` or Makefile for available targets. Key flags: `-std=c99 -D_GNU_S
 ## Test Infrastructure
 
 **Test executables:**
-- `tests/test_state` - State machine tests (22 tests)
+- `tests/test_state` - State machine tests (48 tests)
 
 **Testing approach:**
 - Pure state machine = no mocking needed
