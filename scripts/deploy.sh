@@ -69,6 +69,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 scp -o ControlPath="$SOCKET" -q "$BINARY_PATH" "$RPI_USER@$RPI_IP:$STAGING/"
 scp -o ControlPath="$SOCKET" -q "$SCRIPT_DIR/install.sh" "$RPI_USER@$RPI_IP:$STAGING/"
+scp -o ControlPath="$SOCKET" -q "$SCRIPT_DIR/test-performance.sh" "$RPI_USER@$RPI_IP:$STAGING/"
 scp -o ControlPath="$SOCKET" -q "$PROJECT_ROOT/systemd/touch-timeout.service" "$RPI_USER@$RPI_IP:$STAGING/" 2>/dev/null || true
 ok "Files transferred to $STAGING/"
 
@@ -98,8 +99,9 @@ if ssh -S "$SOCKET" "$RPI_USER@$RPI_IP" "$INSTALL_CMD"; then
     ok "Deployment complete"
     echo ""
     echo "Commands:"
-    echo "  Logs:   ssh $RPI_USER@$RPI_IP 'journalctl -u touch-timeout -f'"
-    echo "  Status: ssh $RPI_USER@$RPI_IP 'systemctl status touch-timeout'"
+    echo "  Logs:         ssh $RPI_USER@$RPI_IP 'journalctl -u touch-timeout -f'"
+    echo "  Status:       ssh $RPI_USER@$RPI_IP 'systemctl status touch-timeout'"
+    echo "  Performance:  ssh $RPI_USER@$RPI_IP 'bash $STAGING/test-performance.sh 30'"
 else
     err "Installation failed"
     echo ""
