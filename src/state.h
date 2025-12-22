@@ -1,9 +1,25 @@
 /*
  * state.h - Pure state machine for display power management
  *
- * Three-state Moore machine: FULL -> DIMMED -> OFF
- * Pure logic only - no I/O, no time calls
- * Caller provides timestamps in seconds from CLOCK_MONOTONIC
+ * ARCHITECTURE:
+ *   Three-state Moore machine: FULL → DIMMED → OFF
+ *   Pure logic only - no I/O, no time calls.
+ *   Caller provides timestamps in seconds from CLOCK_MONOTONIC.
+ *
+ * USAGE PATTERN:
+ *   1. state_init() with config
+ *   2. state_touch() immediately after init to establish timestamp
+ *   3. In event loop: use state_get_timeout_sec() for poll(),
+ *      state_touch() on events, state_timeout() on expiry
+ *   4. Functions return new brightness or STATE_NO_CHANGE (-1)
+ *
+ * IMPLEMENTATION:
+ *   - state.c - Pure state machine (no I/O, fully testable)
+ *   - tests/test_state.c - Comprehensive unit tests
+ *
+ * SEE ALSO:
+ *   - main.c - Event loop integration example
+ *   - doc/ARCHITECTURE.md - State machine diagram and design rationale
  */
 
 #ifndef TOUCH_TIMEOUT_STATE_H

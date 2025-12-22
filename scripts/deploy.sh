@@ -1,12 +1,39 @@
 #!/bin/bash
 #
-# deploy.sh - Transfer and install pre-built binary to Raspberry Pi
+# deploy.sh - Remote deployment automation for Raspberry Pi
 #
-# Called by: make deploy-arm64 RPI=<ip>
-# Arguments: <ip> <binary_path>
-# Environment:
-#   RPI_USER - SSH user (default: root)
-#   MANUAL   - Set to 1 to skip auto-install (default: 0)
+# PURPOSE:
+#   Transfers cross-compiled binary and scripts to RPi staging area,
+#   then optionally auto-installs. Minimizes password prompts via
+#   SSH ControlMaster connection reuse.
+#
+# CALLED BY:
+#   make deploy-arm32 RPI=ip   - Deploy 32-bit build
+#   make deploy-arm64 RPI=ip   - Deploy 64-bit build
+#
+# ARGUMENTS:
+#   $1: RPI_IP - Target Raspberry Pi IP address
+#   $2: BINARY_PATH - Path to cross-compiled binary
+#
+# ENVIRONMENT VARIABLES:
+#   RPI_USER=user   - SSH user (default: root)
+#   MANUAL=1        - Transfer only, skip auto-install
+#
+# WORKFLOW:
+#   1. Establish persistent SSH connection (single password prompt)
+#   2. Create staging directory: /run/touch-timeout-staging/
+#   3. Transfer: binary, install.sh, test-performance.sh, .service file
+#   4. Auto-run install.sh (unless MANUAL=1)
+#   5. Display verification commands
+#
+# EXIT CODES:
+#   0 - Success (deployed and installed, or staged if MANUAL=1)
+#   1 - Failure (SSH connection failed, transfer failed, or install failed)
+#
+# SEE ALSO:
+#   - doc/INSTALLATION.md - Complete deployment guide
+#   - scripts/install.sh - On-device installation script
+#   - Makefile - Build and deployment targets
 #
 
 set -euo pipefail
@@ -69,6 +96,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 scp -o ControlPath="$SOCKET" -q "$BINARY_PATH" "$RPI_USER@$RPI_IP:$STAGING/"
 scp -o ControlPath="$SOCKET" -q "$SCRIPT_DIR/install.sh" "$RPI_USER@$RPI_IP:$STAGING/"
+scp -o ControlPath="$SOCKET" -q "$SCRIPT_DIR/test-performance.sh" "$RPI_USER@$RPI_IP:$STAGING/"
 scp -o ControlPath="$SOCKET" -q "$PROJECT_ROOT/systemd/touch-timeout.service" "$RPI_USER@$RPI_IP:$STAGING/" 2>/dev/null || true
 ok "Files transferred to $STAGING/"
 
@@ -76,12 +104,16 @@ ok "Files transferred to $STAGING/"
 if [[ "$MANUAL" == "1" ]]; then
     echo ""
     echo "Manual mode - files staged at $STAGING/"
+    echo ""
     echo "To install, SSH in and run:"
     if [[ "$RPI_USER" == "root" ]]; then
         echo "  $STAGING/install.sh"
     else
         echo "  sudo $STAGING/install.sh"
     fi
+    echo ""
+    echo "To test performance before installing:"
+    echo "  ssh $RPI_USER@$RPI_IP 'bash $STAGING/test-performance.sh 60'"
     exit 0
 fi
 
@@ -97,9 +129,11 @@ if ssh -S "$SOCKET" "$RPI_USER@$RPI_IP" "$INSTALL_CMD"; then
     echo ""
     ok "Deployment complete"
     echo ""
-    echo "Commands:"
-    echo "  Logs:   ssh $RPI_USER@$RPI_IP 'journalctl -u touch-timeout -f'"
-    echo "  Status: ssh $RPI_USER@$RPI_IP 'systemctl status touch-timeout'"
+    echo "Verify installation:"
+    echo "  Status:       ssh $RPI_USER@$RPI_IP 'systemctl status touch-timeout'"
+    echo "  Logs:         ssh $RPI_USER@$RPI_IP 'journalctl -u touch-timeout -f'"
+    echo "  Performance:  ssh $RPI_USER@$RPI_IP 'bash $STAGING/test-performance.sh 30'"
+    echo "  Version:      ssh $RPI_USER@$RPI_IP 'touch-timeout --version'"
 else
     err "Installation failed"
     echo ""

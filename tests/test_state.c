@@ -1,8 +1,26 @@
 /*
- * test_state.c - Unit tests for state machine and calculations
+ * test_state.c - Unit tests for state machine and utility functions
  *
- * Tests pure functions - no mocking needed
- * main.c included directly (UNIT_TEST excludes main())
+ * TEST PHILOSOPHY:
+ *   - No mocking: Pure functions tested with mock timestamps
+ *   - No external framework: Minimal custom test macros (RUN_TEST, ASSERT_EQ)
+ *   - Direct inclusion: #include "../src/main.c" with UNIT_TEST guard
+ *
+ * COVERAGE:
+ *   - State machine transitions (FULL → DIMMED → OFF → FULL)
+ *   - Timeout calculations and wraparound handling
+ *   - Brightness calculations and clamping
+ *   - Input parsing and validation (boundary cases, security)
+ *   - Edge cases: zero timeouts, wraparound, extreme values
+ *
+ * RUNNING TESTS:
+ *   make test      - Run tests with summary
+ *   make coverage  - Generate coverage report
+ *   ./test_state   - Run directly (shows all test names)
+ *
+ * SEE ALSO:
+ *   - src/state.c - State machine implementation under test
+ *   - src/main.c - Utility functions under test (parse_int, etc.)
  */
 
 #include "../src/main.c"

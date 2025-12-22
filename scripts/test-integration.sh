@@ -13,15 +13,9 @@
 #
 #   Prerequisites:
 #     export RPI=<ip-address>
-#     make deploy-arm32 RPI=$RPI MANUAL=1
+#     make deploy-arm[32,64] RPI=$RPI MANUAL=1
 #
-#   1. SERVICE STATUS (verify current installation)
-#      [ ] ssh root@$RPI 'systemctl status touch-timeout'
-#          - Active: active (running)
-#          - No errors in recent logs
-#
-#   2. STATE TRANSITIONS (use short timeout for testing)
-#      [ ] ssh root@$RPI 'systemctl stop touch-timeout'
+#   1. STATE TRANSITIONS (use short timeout for testing)
 #      [ ] ssh root@$RPI '/run/touch-timeout-staging/touch-timeout-*-arm32 -t 10 -v &'
 #          - Screen starts at full brightness
 #      [ ] Wait ~5 seconds
@@ -37,11 +31,10 @@
 #          - Screen wakes to full brightness
 #          - Log shows: SIGUSR1 -> FULL
 #
-#   4. PERFORMANCE (run for 30-60 seconds)
-#      [ ] scp scripts/test-performance.sh root@$RPI:/run/
-#      [ ] ssh root@$RPI 'bash /run/test-performance.sh 30'
+#   4. PERFORMANCE (run for 30-60 seconds, 30 s default)
+#      [ ] ssh root@$RPI 'bash /run/touch-timeout-staging/test-performance.sh [DURATION_SEC]'
 #          - CPU_AVG_PCT < 0.1 (target: ~0.0 when idle)
-#          - MEM_END_MB < 1.0 (target: ~0.2 MB)
+#          - MEM_END_MB < 1.0 (target: ~0.5 MB)
 #          - SD_WRITE_BYTES = 0 (no SD card writes)
 #          - FD_DELTA = 0 (no file descriptor leaks)
 #

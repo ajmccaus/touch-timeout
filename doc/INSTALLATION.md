@@ -1,6 +1,6 @@
-# Installation Guide - touch-timeout v0.7
+# Installation Guide
 
-Comprehensive guide for installing touch-timeout on Raspberry Pi.
+Installation methods for touch-timeout on Raspberry Pi.
 
 ## Table of Contents
 
@@ -50,16 +50,6 @@ sudo systemctl enable --now touch-timeout.service
 # Optional: Customize settings (see Configuration section below)
 ```
 
-### Verify Installation
-
-```bash
-# Check service status
-sudo systemctl status touch-timeout.service
-
-# View logs
-sudo journalctl -u touch-timeout.service -f
-```
-
 ---
 
 ## Method 2: Remote Deployment (Cross-Compilation)
@@ -84,12 +74,6 @@ arm-linux-gnueabihf-gcc --version     # ARM 32-bit
 - User access (root or pi with sudo)
 - Network connectivity
 
-**Checklist before deploying:**
-- [ ] Cross-compiler installed on build machine
-- [ ] Raspberry Pi is powered on and network-accessible
-- [ ] SSH access works: `ssh <USER>@<IP_ADDRESS>`
-- [ ] (Optional) SSH keys configured for passwordless deployment
-
 ### One-Step Deployment (Recommended)
 
 **Auto-install (default):**
@@ -104,14 +88,6 @@ make deploy-arm64 RPI=<IP_ADDRESS> RPI_USER=pi
 make deploy-arm32 RPI=<IP_ADDRESS>
 ```
 
-**The deployment will:**
-1. Cross-compile binary for specified architecture
-2. Check SSH connectivity (prompts for password once if keys not configured)
-3. Create staging directory on RPi: `/run/touch-timeout-staging/`
-4. Transfer binary, install script, and systemd service
-5. **Automatically install on RPi** (installs binary, service, restarts daemon)
-6. Display completion status
-
 ### Two-Step Deployment (Manual)
 
 **Manual mode (transfer only, skip auto-install):**
@@ -124,63 +100,36 @@ ssh root@<IP_ADDRESS>
 /run/touch-timeout-staging/install.sh
 ```
 
-**Installation options:**
-- **Default (quiet mode)**: Minimizes SD card writes
-- **Verbose mode**: `QUIET_MODE=0 /run/touch-timeout-staging/install.sh`
-
-**The install script will:**
-1. Detect binary architecture from filename
-2. Stop running service (if active)
-3. Install binary as `/usr/bin/touch-timeout-{version}-{arch}`
-4. Create/update symlink: `/usr/bin/touch-timeout`
-5. Install systemd service (if systemd available)
-6. Reload systemd and restart service
-
-### SSH Key Setup (Optional but Recommended)
-
-**Why use SSH keys?**
-Without SSH keys, you'll be prompted for your password once per deployment. SSH keys eliminate this prompt entirely and enable automation.
-
-**Quick SSH Key Setup:**
-
-**Step 1: Check for existing keys**
+**Verbose install:**
 ```bash
+QUIET_MODE=0 /run/touch-timeout-staging/install.sh
+```
+
+### SSH Key Setup (Optional)
+
+Eliminates password prompts during deployment.
+
+```bash
+# Check for existing keys
 ls ~/.ssh/id_rsa.pub
-```
 
-**Step 2: Generate key if needed**
-```bash
+# Generate if needed
 ssh-keygen -t rsa -b 4096 -C "your_email@example.com"
-# Press Enter to accept defaults
-# Optionally set a passphrase (or leave empty for automation)
-```
 
-**Step 3: Copy key to Raspberry Pi**
-
-**Method 1: ssh-copy-id (Linux/macOS/WSL2)**
-```bash
+# Copy to RPi (method 1)
 ssh-copy-id <USER>@<IP_ADDRESS>
-# Replace <USER> with 'root' or 'pi'
-# Enter password when prompted
-```
 
-**Method 2: Manual copy (when ssh-copy-id unavailable)**
-```bash
+# Copy to RPi (method 2 - if ssh-copy-id unavailable)
 cat ~/.ssh/id_rsa.pub | ssh <USER>@<IP_ADDRESS> \
   "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && chmod 700 ~/.ssh"
-```
 
-**Step 4: Verify passwordless login**
-```bash
+# Verify
 ssh <USER>@<IP_ADDRESS> "echo OK"
-# Should print "OK" without password prompt
 ```
 
 ---
 
 ## Configuration
-
-The daemon works out-of-box with sensible defaults. See [README.md - Configuration](../README.md#configuration) for CLI options and customization via systemd.
 
 ### External Wake (shairport-sync)
 
@@ -197,11 +146,18 @@ sessioncontrol = {
 };
 ```
 
-### Finding Your Touchscreen Device
+### Manual Device Override (Rarely Needed)
 
-If default `event0` doesn't work:
+**Note:** Version 0.8.0+ includes device auto-detection. These instructions are only needed if auto-detection fails.
+
+If you need to manually specify devices:
 ```bash
-ls -l /dev/input/by-path/  # Find device with "touch" in name
+# Find touchscreen device (if auto-detection fails)
+ls -l /dev/input/by-path/  # Look for device with "touch" in name
+
+# Override via systemd
+sudo systemctl edit touch-timeout
+# Add: ExecStart=/usr/bin/touch-timeout -i event1 -l backlight_device
 ```
 
 ---
@@ -218,12 +174,6 @@ sudo systemctl status touch-timeout.service
 sudo journalctl -u touch-timeout.service -f
 ```
 
-**Quick health check:**
-```bash
-top -bn1 -p $(pgrep touch-timeout) | tail -1
-# Expected: <1% CPU, ~0.35MB RSS
-```
-
 **Test touch responsiveness:**
 1. Wait for timeout (screen should dim, then turn off)
 2. Touch screen (should restore brightness immediately)
@@ -235,83 +185,46 @@ top -bn1 -p $(pgrep touch-timeout) | tail -1
 
 Collect metrics to verify [README.md](../README.md#performance) claims:
 
+**After `make deploy` (script already on device):**
+```bash
+ssh <USER>@<IP> "bash /run/touch-timeout-staging/test-performance.sh [seconds]"
+```
+
+**Manual deployment:**
 ```bash
 scp scripts/test-performance.sh <USER>@<IP>:/run/
 ssh <USER>@<IP> "bash /run/test-performance.sh [seconds]"
 ```
 
-Default 30 seconds. Outputs CPU average, memory, SD writes, FD count.
+Default duration: 30 seconds. Outputs CPU average, memory, SD writes, FD count.
 
 ---
 
 ## Troubleshooting
 
-### SSH Connection Fails (Remote Deployment)
+### SSH Connection Fails
 
-**Symptom**: `[ERROR] SSH connection failed`
-
-**Diagnosis steps:**
 ```bash
-# 1. Verify network connectivity
+# Verify connectivity
 ping <IP_ADDRESS>
-
-# 2. Test SSH manually
 ssh <USER>@<IP_ADDRESS>
-# Should prompt for password or connect via keys
 
-# 3. Check SSH service on RPi (if you can access it)
-sudo systemctl status ssh
+# First-time connection: accept host key when prompted
 ```
-
-**Common causes:**
-- RPi not powered on or not on network
-- Wrong IP address
-- SSH service not running on RPi
-- Firewall blocking port 22
-- First-time connection (see below)
-
-### First-Time SSH Host Key Verification
-
-On first connection to a new device:
-```
-The authenticity of host '<IP_ADDRESS>' can't be established.
-ECDSA key fingerprint is SHA256:...
-Are you sure you want to continue connecting (yes/no)?
-```
-
-**Action**: Type `yes` and press Enter to add host to `~/.ssh/known_hosts`
 
 ### Cross-Compiler Not Found
 
-If `make arm64` fails with compiler not found:
-
-**Fix:**
 ```bash
-sudo apt-get update
 sudo apt-get install gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf
 ```
 
 ### Service Won't Start
 
 ```bash
-systemctl status touch-timeout.service
 journalctl -u touch-timeout.service -n 50
+ls -l /usr/bin/touch-timeout
+ls /sys/class/backlight/
 ```
-
-**Check that:**
-- Symlink target binary exists: `ls -l /usr/bin/touch-timeout`
-- Binary is executable
-- Device `/dev/input/event0` exists (or configured device)
-- Backlight device exists: `ls /sys/class/backlight/`
-
-### Build Fails
-
-**Symptom**: `make` command fails
-
-**Check:**
-- GCC installed: `gcc --version`
-- For cross-compilation: correct toolchain installed
-- Sufficient disk space: `df -h`
 
 ---
 
@@ -345,10 +258,3 @@ sudo rm /usr/bin/touch-timeout* /etc/systemd/system/touch-timeout.service
 sudo systemctl daemon-reload
 ```
 
----
-
-## Additional Resources
-
-- **README.md**: Feature overview and project description
-- **ARCHITECTURE.md**: Architecture and design decisions
-- **Makefile**: Build system reference and targets

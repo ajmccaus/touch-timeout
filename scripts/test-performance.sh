@@ -1,16 +1,42 @@
 #!/bin/bash
 #
-# test-performance.sh - Collect performance data for touch-timeout daemon
+# test-performance.sh - Performance data collection for touch-timeout daemon
 #
-# Outputs machine-readable metrics. Redirect to file for comparison.
-# Only requires: ps, awk, ls, sleep, date (standard on minimal Linux)
+# PURPOSE:
+#   Measures CPU usage, memory consumption, SD card writes, and file descriptor
+#   leaks over a specified duration. Outputs machine-readable metrics for
+#   verification against performance targets.
 #
-# Usage:
-#   scp scripts/test-performance.sh <USER>@<IP>:/run/
-#   ssh <USER>@<IP> "bash /run/test-performance.sh" | tee perf-$(date +%Y%m%d).txt
+# DEPENDENCIES:
+#   Standard tools only: ps, awk, ls, sleep, date (no external packages)
 #
-# Optional: specify duration (default 30s)
-#   ssh <USER>@<IP> "bash /run/test-performance.sh 60"
+# TARGETS (from README.md):
+#   - CPU: ~0% average (idle blocking with poll())
+#   - Memory: <0.5 MB RSS (static binary, no allocation)
+#   - SD writes: 0 bytes (no logging to disk during operation)
+#   - FD delta: 0 (no file descriptor leaks)
+#
+# USAGE:
+#
+#   After `make deploy` (script already on device):
+#     ssh <USER>@<IP> "bash /run/touch-timeout-staging/test-performance.sh [seconds]"
+#
+#   Manual deployment:
+#     scp scripts/test-performance.sh <USER>@<IP>:/run/
+#     ssh <USER>@<IP> "bash /run/test-performance.sh [seconds]"
+#
+#   Capture to file:
+#     ssh <USER>@<IP> "bash /run/test-performance.sh 30" | tee perf-$(date +%Y%m%d).txt
+#
+# ARGUMENTS:
+#   $1: DURATION - Measurement duration in seconds (default: 30)
+#
+# OUTPUT FORMAT:
+#   Machine-readable key=value pairs for automated comparison
+#
+# SEE ALSO:
+#   - doc/INSTALLATION.md - Performance verification section
+#   - README.md - Performance claims
 #
 
 set -e
@@ -23,8 +49,16 @@ if [[ -z "$pid" ]]; then
     exit 1
 fi
 
+# Extract version and arch from binary name (e.g., touch-timeout-0.8.0-arm64)
+binary=$(readlink /proc/$pid/exe 2>/dev/null || echo "unknown")
+binary_name=$(basename "$binary")
+version=$(echo "$binary_name" | sed -n 's/touch-timeout-\([0-9.]*\)-.*/\1/p')
+arch=$(echo "$binary_name" | sed -n 's/touch-timeout-[0-9.]*-\(.*\)/\1/p')
+
 # Header
 echo "# touch-timeout performance data"
+echo "# Version: ${version:-unknown}"
+echo "# Arch: ${arch:-unknown}"
 echo "# Date: $(date -Iseconds 2>/dev/null || date)"
 echo "# Duration: ${DURATION}s"
 echo "# PID: $pid"

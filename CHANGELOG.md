@@ -25,9 +25,38 @@ See [PROJECT-HISTORY.md](doc/PROJECT-HISTORY.md) for the full case study.
 
 ---
 
-## [Unreleased]
+## [0.8.0] - 2025-12-21
 
-Target: v0.7.0 — Architecture simplification
+Device auto-detection and documentation improvements.
+
+### Added
+
+- **Device auto-detection**: Automatic discovery of backlight and touchscreen devices
+  - Scans /sys/class/backlight/ for backlight device
+  - Scans /dev/input/event* for multitouch-capable devices
+  - Fallback to defaults if auto-detection fails
+  - Manual override via `-l` and `-i` CLI options
+
+### Changed
+
+- **Documentation**: Enhanced source file headers with architectural context
+  - Clear purpose, design constraints, and dependencies
+  - Navigation aids with "SEE ALSO" references
+  - Testing locations and strategies documented
+- **INSTALLATION.md**: Updated for auto-detection (manual device selection rarely needed)
+- **Deployment scripts**: Improved output with verification commands and testing instructions
+- **Makefile**: Added complete target reference in header
+- **test-performance.sh**: Added version and arch to output header
+
+### Performance (arm64)
+
+- CPU: 0.0% avg, Memory: 0.58 MB, FD leaks: 0, SD writes: 0
+
+---
+
+## [0.7.0] - 2024-12-19
+
+Architecture simplification and feature additions.
 
 ### Changed
 
@@ -41,7 +70,7 @@ Target: v0.7.0 — Architecture simplification
 ### Added
 
 - **SIGUSR1 wake**: External programs can wake display
-- **Verbose mode**: `-v` flag for state transition logging and debugging in terminal mode
+- **Verbose mode**: `-v` flag for state transition logging
 
 ### Removed
 

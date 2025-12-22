@@ -1,7 +1,7 @@
 # touch-timeout
 Lightweight touchscreen backlight manager for Raspberry Pi 7" displays. Automatically dims and powers off the display during inactivity, instantly restoring on touch. Optimized for minimal Linux distributions like HifiBerry OS.
 
-**Version:** 0.7.0 | [CHANGELOG](CHANGELOG.md) | [ARCHITECTURE](doc/ARCHITECTURE.md)
+**Version:** 0.8.0 | [CHANGELOG](CHANGELOG.md) | [ARCHITECTURE](doc/ARCHITECTURE.md)
 
 ## Quick Start
 
@@ -27,7 +27,7 @@ make && sudo make install
 
 ## Features
 
-- **Works out-of-box** - sensible defaults, no configuration required
+- **Works out-of-box** - auto-detects devices, sensible defaults, no configuration required
 - **Configurable via CLI** - all options available as command-line arguments
 - **Power efficient** - zero CPU when idle (poll-based, no polling loops)
 - **External wake support** - SIGUSR1 for shairport-sync integration
@@ -67,8 +67,8 @@ ExecStart=/usr/bin/touch-timeout -b 200 -t 600
 | `-b, --brightness=N` | Full brightness (15-255) | 150 |
 | `-t, --timeout=N` | Off timeout in seconds (10-86400) | 300 |
 | `-d, --dim-percent=N` | Dim at N% of timeout (1-100) | 10 |
-| `-l, --backlight=NAME` | Backlight device | rpi_backlight |
-| `-i, --input=NAME` | Input device | event0 |
+| `-l, --backlight=NAME` | Backlight device | auto-detect |
+| `-i, --input=NAME` | Input device | auto-detect |
 | `-v, --verbose` | Verbose logging | |
 
 **External Wake (shairport-sync):**
