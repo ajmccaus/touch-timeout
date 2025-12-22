@@ -5,22 +5,30 @@
  * Dims display after inactivity, turns off after timeout, wakes on touch
  */
 
+/* Project headers */
 #include "state.h"
 #include "version.h"
 
+/* C standard library */
+#include <errno.h>
+#include <limits.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <signal.h>
-#include <errno.h>
-#include <poll.h>
-#include <fcntl.h>
 #include <time.h>
+
+/* POSIX */
+#include <dirent.h>
+#include <fcntl.h>
 #include <getopt.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <limits.h>
+#include <poll.h>
+#include <signal.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
+
+/* Linux-specific */
 #include <linux/input.h>
 
 /* Systemd notification support */
@@ -61,20 +69,30 @@ _Static_assert(MAX_BRIGHTNESS * MAX_DIM_PERCENT <= INT_MAX,
 /* Buffer sizes and paths */
 
 /* Filesystem paths (Linux sysfs/devfs conventions) */
-#define SYSFS_BACKLIGHT_DIR  "/sys/class/backlight"
-#define DEV_INPUT_DIR        "/dev/input"
+#define SYSFS_BACKLIGHT_PATH  "/sys/class/backlight"
+#define DEV_INPUT_PATH        "/dev/input"
 
 /* Buffer sizes */
 #define MAX_DEVICE_NAME_LEN  64
 #define SYSFS_VALUE_LEN      16
 /* Path buffer: dir + "/" + name + "/max_brightness" + null */
-#define PATH_BUFFER_LEN      (sizeof(SYSFS_BACKLIGHT_DIR) + 1 + MAX_DEVICE_NAME_LEN + 16)
+#define PATH_BUFFER_LEN      (sizeof(SYSFS_BACKLIGHT_PATH) + 1 + MAX_DEVICE_NAME_LEN + 16)
 
 /* Compile-time buffer safety checks */
-_Static_assert(PATH_BUFFER_LEN >= sizeof(SYSFS_BACKLIGHT_DIR) + 1 + MAX_DEVICE_NAME_LEN + sizeof("/max_brightness"),
+_Static_assert(PATH_BUFFER_LEN >= sizeof(SYSFS_BACKLIGHT_PATH) + 1 + MAX_DEVICE_NAME_LEN + sizeof("/max_brightness"),
                "PATH_BUFFER_LEN too small for backlight paths");
-_Static_assert(PATH_BUFFER_LEN >= sizeof(DEV_INPUT_DIR) + 1 + MAX_DEVICE_NAME_LEN,
+_Static_assert(PATH_BUFFER_LEN >= sizeof(DEV_INPUT_PATH) + 1 + MAX_DEVICE_NAME_LEN,
                "PATH_BUFFER_LEN too small for input paths");
+
+/* Device auto-detection */
+
+#define INPUT_SCAN_MAX  32  /* Max input devices to scan (event0..event31) */
+
+/* Bit manipulation for ioctl capability queries (kernel-style macros) */
+#define BITS_PER_LONG   (sizeof(unsigned long) * 8)
+#define NBITS(x)        ((((x) - 1) / BITS_PER_LONG) + 1)
+#define test_bit(bit, array) \
+    ((array[(bit) / BITS_PER_LONG] >> ((bit) % BITS_PER_LONG)) & 1)
 
 /* Configuration structure */
 
@@ -166,11 +184,13 @@ static void usage(const char *prog) {
         "  -b, --brightness=N   Full brightness (15-255, default %d)\n"
         "  -t, --timeout=N      Off timeout in seconds (10-86400, default %d)\n"
         "  -d, --dim-percent=N  Dim at N%% of timeout (1-100, default %d)\n"
-        "  -l, --backlight=NAME Backlight device (default %s)\n"
-        "  -i, --input=NAME     Input device (default %s)\n"
+        "  -l, --backlight=NAME Backlight device (auto-detect, fallback %s)\n"
+        "  -i, --input=NAME     Input device (auto-detect, fallback %s)\n"
         "  -v, --verbose        Verbose logging\n"
         "  -V, --version        Show version\n"
         "  -h, --help           Show this help\n"
+        "\n"
+        "Devices are auto-detected at startup. Use -l/-i to override.\n"
         "\n"
         "External wake: Send SIGUSR1 to wake display\n"
         "  pkill -USR1 touch-timeout\n",
@@ -186,6 +206,86 @@ static bool validate_device_name(const char *name) {
     if (len == 0 || len >= MAX_DEVICE_NAME_LEN)
         return false;
     return true;
+}
+
+/*
+ * Auto-detect backlight device by scanning /sys/class/backlight/
+ * Returns true if found, writing device name to out buffer.
+ * Most systems have only one backlight device.
+ */
+static bool find_backlight_device(char *out, size_t out_len) {
+    DIR *dir = opendir(SYSFS_BACKLIGHT_PATH);
+    if (!dir) {
+        log_verbose("Cannot open %s: %s", SYSFS_BACKLIGHT_PATH, strerror(errno));
+        return false;
+    }
+
+    struct dirent *entry;
+    bool found = false;
+
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_name[0] == '.')
+            continue;
+        if (!validate_device_name(entry->d_name))
+            continue;
+
+        /* Length validated above, safe to copy */
+        size_t len = strlen(entry->d_name);
+        if (len < out_len) {
+            memcpy(out, entry->d_name, len + 1);
+            found = true;
+            break;
+        }
+    }
+
+    closedir(dir);
+    return found;
+}
+
+/*
+ * Auto-detect touchscreen by scanning /dev/input/event* devices.
+ * Looks for devices with multitouch absolute positioning (ABS_MT_POSITION_X/Y).
+ * Returns true if found, writing device name (e.g., "event0") to out buffer.
+ */
+static bool find_touch_device(char *out, size_t out_len) {
+    unsigned long evbit[NBITS(EV_MAX + 1)];
+    unsigned long absbit[NBITS(ABS_MAX + 1)];
+    char path[PATH_BUFFER_LEN];
+
+    for (int i = 0; i < INPUT_SCAN_MAX; i++) {
+        snprintf(path, sizeof(path), "%s/event%d", DEV_INPUT_PATH, i);
+
+        int fd = open(path, O_RDONLY | O_NONBLOCK);
+        if (fd < 0)
+            continue;
+
+        memset(evbit, 0, sizeof(evbit));
+        if (ioctl(fd, EVIOCGBIT(0, sizeof(evbit)), evbit) < 0) {
+            close(fd);
+            continue;
+        }
+
+        if (!test_bit(EV_ABS, evbit)) {
+            close(fd);
+            continue;
+        }
+
+        memset(absbit, 0, sizeof(absbit));
+        if (ioctl(fd, EVIOCGBIT(EV_ABS, sizeof(absbit)), absbit) < 0) {
+            close(fd);
+            continue;
+        }
+
+        close(fd);
+
+        if (test_bit(ABS_MT_POSITION_X, absbit) &&
+            test_bit(ABS_MT_POSITION_Y, absbit)) {
+            snprintf(out, out_len, "event%d", i);
+            return true;
+        }
+    }
+
+    return false;
 }
 
 static void parse_args(int argc, char **argv, config_s *cfg) {
@@ -273,7 +373,7 @@ static void parse_args(int argc, char **argv, config_s *cfg) {
 
 static int open_backlight(const char *name) {
     char path[PATH_BUFFER_LEN];
-    snprintf(path, sizeof(path), "%s/%s/brightness", SYSFS_BACKLIGHT_DIR, name);
+    snprintf(path, sizeof(path), "%s/%s/brightness", SYSFS_BACKLIGHT_PATH, name);
 
     int fd = open(path, O_RDWR);
     if (fd < 0) {
@@ -285,7 +385,7 @@ static int open_backlight(const char *name) {
 
 static int get_max_brightness(const char *name) {
     char path[PATH_BUFFER_LEN];
-    snprintf(path, sizeof(path), "%s/%s/max_brightness", SYSFS_BACKLIGHT_DIR, name);
+    snprintf(path, sizeof(path), "%s/%s/max_brightness", SYSFS_BACKLIGHT_PATH, name);
 
     int fd = open(path, O_RDONLY);
     if (fd < 0) {
@@ -340,7 +440,7 @@ static int set_brightness(int fd, int value) {
 
 static int open_input(const char *name) {
     char path[PATH_BUFFER_LEN];
-    snprintf(path, sizeof(path), "%s/%s", DEV_INPUT_DIR, name);
+    snprintf(path, sizeof(path), "%s/%s", DEV_INPUT_PATH, name);
 
     int fd = open(path, O_RDONLY | O_NONBLOCK);
     if (fd < 0) {
@@ -396,15 +496,34 @@ static int setup_signals(void) {
 /* Entry point */
 
 int main(int argc, char *argv[]) {
-    /* Initialize configuration with defaults */
+    /* Initialize configuration with defaults (empty strings = auto-detect) */
     config_s cfg = {
         .brightness = DEFAULT_BRIGHTNESS,
         .timeout_sec = DEFAULT_TIMEOUT_SEC,
         .dim_percent = DEFAULT_DIM_PERCENT,
-        .backlight = DEFAULT_BACKLIGHT,
-        .device = DEFAULT_DEVICE
+        .backlight = "",
+        .device = ""
     };
     parse_args(argc, argv, &cfg);
+
+    /* Auto-detect devices if not specified by user */
+    if (cfg.backlight[0] == '\0') {
+        if (find_backlight_device(cfg.backlight, sizeof(cfg.backlight))) {
+            log_info("Auto-detected backlight: %s", cfg.backlight);
+        } else {
+            snprintf(cfg.backlight, sizeof(cfg.backlight), "%s", DEFAULT_BACKLIGHT);
+            log_verbose("No backlight found, using default: %s", cfg.backlight);
+        }
+    }
+
+    if (cfg.device[0] == '\0') {
+        if (find_touch_device(cfg.device, sizeof(cfg.device))) {
+            log_info("Auto-detected touchscreen: %s", cfg.device);
+        } else {
+            snprintf(cfg.device, sizeof(cfg.device), "%s", DEFAULT_DEVICE);
+            log_verbose("No touchscreen found, using default: %s", cfg.device);
+        }
+    }
 
     /* Open devices */
     int bl_fd = open_backlight(cfg.backlight);
