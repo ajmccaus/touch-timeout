@@ -1,8 +1,32 @@
 /*
  * state.c - Pure state machine implementation
  *
- * No I/O dependencies - fully testable
- * Caller provides timestamps in seconds, we do pure logic
+ * ARCHITECTURE ROLE:
+ *   Pure business logic for 3-state Moore machine (FULL → DIMMED → OFF).
+ *   Deliberately isolated from all I/O to enable unit testing without mocks.
+ *
+ * DESIGN CONSTRAINTS:
+ *   - No I/O: No file access, no time calls, no system calls
+ *   - Pure functions: All state passed as parameters
+ *   - Wraparound-safe: Arithmetic handles CLOCK_MONOTONIC wraparound correctly
+ *   - Caller owns time: All timestamps provided by caller in seconds
+ *
+ * STATE TRANSITIONS:
+ *   FULL → DIMMED → OFF (on idle timeout)
+ *   Any state → FULL (on touch event)
+ *   See doc/ARCHITECTURE.md for state diagram.
+ *
+ * TESTING STRATEGY:
+ *   No mocking needed - pass mock timestamps directly to functions.
+ *   See tests/test_state.c for comprehensive test suite.
+ *
+ * USED BY:
+ *   - main.c event loop (production)
+ *   - tests/test_state.c (unit tests)
+ *
+ * SEE ALSO:
+ *   - state.h - Public API and preconditions
+ *   - doc/ARCHITECTURE.md - State machine diagram
  */
 
 #include "state.h"

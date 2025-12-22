@@ -1,8 +1,47 @@
 /*
- * main.c - Touch-timeout daemon
+ * main.c - Touch-timeout daemon entry point and I/O layer
  *
- * Lightweight touchscreen backlight manager for Raspberry Pi
- * Dims display after inactivity, turns off after timeout, wakes on touch
+ * ARCHITECTURE ROLE:
+ *   I/O and platform layer wrapping the pure state machine (state.c).
+ *   Owns: CLI parsing, device discovery, sysfs/input I/O, event loop, signals.
+ *
+ * DESIGN CONSTRAINTS:
+ *   - Zero CPU when idle: Uses blocking poll() with timeout from state machine
+ *   - Zero writes when idle: Caches brightness to avoid redundant sysfs writes
+ *   - No dynamic allocation: Fixed buffers with compile-time bounds checking
+ *   - Monotonic time only: CLOCK_MONOTONIC for wraparound-safe timeouts
+ *
+ * EVENT LOOP DESIGN:
+ *   1. poll() blocks on /dev/input/eventX with timeout from state_get_timeout_sec()
+ *   2. On POLLIN: drain_touch_events() → state_touch() → set_brightness() if changed
+ *   3. On timeout: state_timeout() → set_brightness() if changed
+ *   4. On SIGUSR1: state_touch() to wake display (external integration)
+ *   5. On SIGTERM/SIGINT: g_running=false → cleanup → exit
+ *
+ * MODULE INTERFACE:
+ *   Calls state.c API - pure functions where caller provides timestamps.
+ *   See state.h for complete interface.
+ *
+ * DEVICE AUTO-DETECTION:
+ *   Backlight and touchscreen auto-detected at startup via sysfs/ioctl queries.
+ *   CLI options (-l, -i) override auto-detection.
+ *
+ * TESTING:
+ *   Unit tests: tests/test_state.c (tests state machine only)
+ *   Integration tests: scripts/test-integration.sh (device deployment validation)
+ *   This file is included by test_state.c with UNIT_TEST guard to test static functions
+ *
+ * DEPENDENCIES:
+ *   - state.h (pure state machine)
+ *   - version.h (auto-generated build info)
+ *   - Linux input subsystem (/dev/input/eventX)
+ *   - Linux backlight sysfs (/sys/class/backlight/)
+ *   - Optional: libsystemd (sd_notify for startup confirmation)
+ *
+ * SEE ALSO:
+ *   - doc/ARCHITECTURE.md - System architecture overview and block diagram
+ *   - systemd/touch-timeout.service - Systemd integration
+ *   - CLAUDE.md - Coding standards and naming conventions
  */
 
 /* Project headers */
