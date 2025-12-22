@@ -1,6 +1,6 @@
 ---
-version: "0.7"
-updated: 2025-12-19
+version: "0.8"
+updated: 2025-12-21
 ---
 
 # Touch-Timeout Architecture
@@ -31,9 +31,9 @@ src/
     │  ┌──────────────┐  ┌──────────────┐  ┌─────────────────┐  │
     │  │ CLI Parsing  │  │  Device I/O  │  │   Event Loop    │  │
     │  │              │  │              │  │                 │  │
-    │  │ parse_args() │  │ open_*()     │  │ poll() on input │
-    │  │ usage()      │  │ set_bright() │  │ ├─ POLLIN: touch│  │
-    │  │              │  │ drain_*()    │  │ └─ timeout: dim │  │
+    │  │ parse_args() │  │ find_*()     │  │ poll() on input │
+    │  │ usage()      │  │ open_*()     │  │ ├─ POLLIN: touch│  │
+    │  │              │  │ set_bright() │  │ └─ timeout: dim │  │
     │  └──────────────┘  └──────────────┘  └─────────────────┘  │
     │                                               │            │
     │                                               │ state_*()  │
