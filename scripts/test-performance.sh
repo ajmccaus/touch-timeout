@@ -49,12 +49,16 @@ if [[ -z "$pid" ]]; then
     exit 1
 fi
 
-# Get binary name (includes version and arch, e.g., touch-timeout-0.8.0-arm64)
-binary=$(basename "$(readlink /proc/$pid/exe 2>/dev/null)" 2>/dev/null || echo "unknown")
+# Extract version and arch from binary name (e.g., touch-timeout-0.8.0-arm64)
+binary=$(readlink /proc/$pid/exe 2>/dev/null || echo "unknown")
+binary_name=$(basename "$binary")
+version=$(echo "$binary_name" | sed -n 's/touch-timeout-\([0-9.]*\)-.*/\1/p')
+arch=$(echo "$binary_name" | sed -n 's/touch-timeout-[0-9.]*-\(.*\)/\1/p')
 
 # Header
 echo "# touch-timeout performance data"
-echo "# Binary: $binary"
+echo "# Version: ${version:-unknown}"
+echo "# Arch: ${arch:-unknown}"
 echo "# Date: $(date -Iseconds 2>/dev/null || date)"
 echo "# Duration: ${DURATION}s"
 echo "# PID: $pid"
