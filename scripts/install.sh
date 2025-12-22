@@ -1,15 +1,43 @@
 #!/bin/bash
 #
-# install.sh - Install touch-timeout binary with versioning and symlink management
+# install.sh - On-device installation with version management
 #
-# This script runs on the RPi4 and handles:
-# - Verification of binary and permissions
-# - Installation with version and architecture suffix
-# - Symlink management for zero-downtime updates
-# - Service restart
+# PURPOSE:
+#   Installs touch-timeout binary with versioned naming and symlink
+#   management for rollback support. Optimized for minimal SD card wear.
 #
-# Optimized for SD card wear: Minimizes logging output and journal writes.
-# Usage: sudo /run/touch-timeout-staging/install.sh
+# RUNS ON:
+#   Raspberry Pi (target device) - Called by deploy.sh or manually
+#
+# WORKFLOW:
+#   1. Detect binary in /run/touch-timeout-staging/ (versioned format)
+#   2. Parse version and architecture from filename
+#   3. Stop running service (if active)
+#   4. Install as /usr/bin/touch-timeout-X.Y.Z-{arm32,arm64}
+#   5. Create/update symlink: /usr/bin/touch-timeout → versioned binary
+#   6. Install systemd service file (if systemd present)
+#   7. Reload systemd, enable service, start service
+#
+# VERSIONING:
+#   Keeps multiple versions installed for rollback:
+#   /usr/bin/touch-timeout-0.7.0-arm64
+#   /usr/bin/touch-timeout-0.8.0-arm64
+#   /usr/bin/touch-timeout → touch-timeout-0.8.0-arm64 (symlink)
+#
+# ENVIRONMENT VARIABLES:
+#   QUIET_MODE=0   - Enable verbose output (default: 1 for minimal SD writes)
+#
+# EXIT CODES:
+#   0 - Success (installed and service started)
+#   1 - Failure (invalid binary, permissions, or service start failed)
+#
+# USAGE:
+#   sudo /run/touch-timeout-staging/install.sh           # Auto-detect binary
+#   QUIET_MODE=0 sudo /run/touch-timeout-staging/install.sh  # Verbose mode
+#
+# SEE ALSO:
+#   - scripts/deploy.sh - Remote deployment that calls this script
+#   - Makefile (rollback targets) - Version management commands
 #
 
 set -euo pipefail
