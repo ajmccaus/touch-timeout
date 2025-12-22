@@ -1,13 +1,61 @@
 # Makefile for touch-timeout daemon
 #
-# Simplified 2-module architecture:
-# - main.c: CLI, device I/O, event loop
-# - state.c: Pure state machine (no I/O)
-# - Optional systemd support
+# QUICK START:
+#   make help               - Show all available targets
+#   make                    - Build native binary for development/testing
+#   make deploy-arm64 RPI=ip - One-step: build + deploy + install on RPi4
+#
+# BUILD TARGETS:
+#   make                    - Native build (development/testing)
+#   make arm32              - Cross-compile for ARM 32-bit (RPi 3/Zero)
+#   make arm64              - Cross-compile for ARM 64-bit (RPi 4)
+#
+# REMOTE DEPLOYMENT (requires RPI=ip):
+#   make deploy-arm32 RPI=ip                - Build + deploy + auto-install (32-bit)
+#   make deploy-arm64 RPI=ip                - Build + deploy + auto-install (64-bit)
+#   make deploy-arm64 RPI=ip MANUAL=1       - Transfer only (skip auto-install)
+#   make deploy-arm64 RPI=ip RPI_USER=pi    - Deploy as non-root user
+#
+# ROLLBACK (requires RPI=ip):
+#   make rollback-list RPI=ip               - List installed versions on RPi
+#   make rollback RPI=ip TO=X.Y.Z           - Switch to specific version
+#
+# LOCAL INSTALL (on Raspberry Pi):
+#   make install                            - Install to /usr/bin with systemd service
+#   make uninstall                          - Remove all versions and service
+#
+# TESTING:
+#   make test                               - Run unit tests (tests/test_state.c)
+#   make coverage                           - Generate coverage report
+#
+# CLEANUP:
+#   make clean                              - Remove build artifacts
+#   make clean-all                          - Remove build artifacts and build directory
+#
+# DEPLOYMENT WORKFLOW:
+#   1. Cross-compile binary for target architecture (arm32/arm64)
+#   2. scripts/deploy.sh transfers to RPi: /run/touch-timeout-staging/
+#   3. scripts/install.sh (auto-run unless MANUAL=1):
+#      - Installs: /usr/bin/touch-timeout-X.Y.Z-{arm32,arm64}
+#      - Symlink: /usr/bin/touch-timeout -> versioned binary
+#      - Installs systemd service, reloads daemon, restarts service
+#
+# VERSION MANAGEMENT (Single Source of Truth):
+#   VERSION_* variables below define version embedded in binaries.
+#   Auto-generates include/version.h during build.
+#
+# DEPENDENCIES:
+#   - Cross-compile: gcc-arm-linux-gnueabihf (arm32), gcc-aarch64-linux-gnu (arm64)
+#   - Optional: pkg-config libsystemd (enables sd_notify support)
+#
+# SEE ALSO:
+#   - doc/INSTALLATION.md - Complete deployment guide and troubleshooting
+#   - scripts/deploy.sh   - Remote deployment automation
+#   - scripts/install.sh  - On-device installation with version management
 
 # Version management (single source of truth)
 VERSION_MAJOR = 0
-VERSION_MINOR = 7
+VERSION_MINOR = 8
 VERSION_PATCH = 0
 VERSION = $(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_PATCH)
 
