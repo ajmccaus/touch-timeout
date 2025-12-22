@@ -9,13 +9,18 @@ Current implementation state. This document is descriptive (how it DOES work).
 
 ## Module Structure
 
-Simplified 2-module architecture:
+Simplified 2-module architecture. See source file headers for detailed architectural context:
 
 ```
 src/
-├── main.c          # CLI, device I/O, event loop
-└── state.c/h       # Pure state machine (no I/O)
+├── main.c          # CLI, device I/O, event loop (see file header for design constraints)
+└── state.c/h       # Pure state machine (see headers for usage patterns, state transitions)
 ```
+
+**For implementation details**, refer to:
+- [src/main.c](../src/main.c) - I/O layer, event loop design, device integration
+- [src/state.c](../src/state.c) - Pure state machine implementation
+- [src/state.h](../src/state.h) - State machine API and usage patterns
 
 ## Block Diagram
 
