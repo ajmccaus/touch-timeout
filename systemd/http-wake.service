@@ -1,0 +1,14 @@
+[Unit]
+Description=Touch Timeout HTTP Wake Endpoint
+Documentation=https://github.com/ajmccaus/touch-timeout
+After=network.target touch-timeout.service
+Requires=touch-timeout.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/http-wake
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

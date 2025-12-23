@@ -32,7 +32,7 @@ make && sudo make install
 - **Works out-of-box** - auto-detects devices, sensible defaults, no configuration required
 - **Configurable via CLI** - all options available as command-line arguments
 - **Power efficient** - zero CPU when idle (poll-based, no polling loops)
-- **External wake support** - SIGUSR1 for shairport-sync integration
+- **External wake support** - HTTP endpoint or direct signal for audio/automation integration
 - **Hardware-aware** - respects display max brightness, prevents flicker
 - Systemd integration with graceful shutdown
 
@@ -73,14 +73,20 @@ ExecStart=/usr/bin/touch-timeout -b 200 -t 600
 | `-i, --input=NAME` | Input device | auto-detect |
 | `-v, --verbose` | Verbose logging | |
 
-**External Wake (shairport-sync):**
+**External Wake Integration:**
+
+For containerized services or external systems to wake the display:
 
 ```bash
-# Wake display programmatically
+# Option 1: HTTP endpoint (recommended for containers)
+sudo scripts/install-http-wake.sh
+# Then integrate: curl -sS -X POST http://127.0.0.1:8765/wake
+
+# Option 2: Direct signal (host processes only)
 pkill -USR1 touch-timeout
 ```
 
-See [INSTALLATION.md - Configuration](doc/INSTALLATION.md#configuration) for more examples.
+See `scripts/http-wake.py` for integration examples (shairport-sync).
 
 ## Performance
 
