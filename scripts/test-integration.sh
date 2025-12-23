@@ -9,43 +9,20 @@
 #   - Version consistency
 #   - CLI argument handling
 #
-# MANUAL TESTS (require real RPi with 7" touchscreen):
+# ON-DEVICE TESTS (require real RPi with 7" touchscreen):
 #
-#   Prerequisites:
-#     export RPI=<ip-address>
-#     make deploy-arm[32,64] RPI=$RPI MANUAL=1
+#   Prerequisites: export RPI=<ip-address>; make deploy-arm[32,64] RPI=$RPI
 #
-#   1. STATE TRANSITIONS (use short timeout for testing)
-#      [ ] ssh root@$RPI '/run/touch-timeout-staging/touch-timeout-*-arm32 -t 10 -v &'
-#          - Screen starts at full brightness
-#      [ ] Wait ~5 seconds
-#          - Screen dims (FULL -> DIMMED logged)
-#      [ ] Wait ~5 more seconds
-#          - Screen turns off (DIMMED -> OFF logged)
-#      [ ] Touch screen
-#          - Screen wakes to full brightness (Touch -> FULL logged)
+#   AUTOMATED (with RPI env var set):
+#     - State transitions (FULL->DIMMED->OFF via timeout)
+#     - SIGUSR1 wake (OFF->FULL via signal)
 #
-#   3. SIGUSR1 WAKE (external wake signal)
-#      [ ] Wait for screen to dim or turn off
-#      [ ] ssh root@$RPI 'pkill -USR1 -f touch-timeout'
-#          - Screen wakes to full brightness
-#          - Log shows: SIGUSR1 -> FULL
-#
-#   4. PERFORMANCE (run for 30-60 seconds, 30 s default)
-#      [ ] ssh root@$RPI 'bash /run/touch-timeout-staging/test-performance.sh [DURATION_SEC]'
-#          - CPU_AVG_PCT < 0.1 (target: ~0.0 when idle)
-#          - MEM_END_MB < 1.0 (target: ~0.5 MB)
-#          - SD_WRITE_BYTES = 0 (no SD card writes)
-#          - FD_DELTA = 0 (no file descriptor leaks)
-#
-#   5. CLEANUP
-#      [ ] ssh root@$RPI 'pkill -f touch-timeout'
-#      [ ] ssh root@$RPI 'systemctl start touch-timeout'
-#          - Daemon running with default config
-#
-#   6. INSTALL (if all tests pass)
-#      [ ] ssh root@$RPI '/run/touch-timeout-staging/install.sh'
-#          - Installs to /usr/bin and restarts service
+#   MANUAL ONLY:
+#     - Touch wake: ssh root@$RPI '/run/.../touch-timeout-*-arm* -t 10 -v'
+#                   Wait for OFF, touch screen, verify Touch->FULL in logs
+#     - Performance: ssh root@$RPI 'bash /run/.../test-performance.sh'
+#                    Targets: CPU ~0%, MEM <0.5MB, SD writes = 0, FD delta = 0
+#     - Install: ssh root@$RPI '/run/touch-timeout-staging/install.sh'
 #
 
 set -e
@@ -130,6 +107,54 @@ if [ -n "$BINARY" ] && [ -x "$BINARY" ]; then
     fi
 else
     fail "Binary not found or not executable"
+fi
+
+# ==================== ON-DEVICE TESTS ====================
+
+if [ -n "${RPI:-}" ]; then
+    echo "[6/7] Testing state transitions on device..."
+
+    # Start daemon with short timeout and capture verbose output
+    LOGFILE=$(mktemp)
+    ssh root@$RPI 'pkill -f touch-timeout 2>/dev/null || true'  # Clean slate
+    ssh root@$RPI 'nohup /run/touch-timeout-staging/touch-timeout-*-arm* -t 10 -v > /tmp/tt.log 2>&1 &'
+    sleep 1  # Let daemon start
+
+    # Wait for DIMMED transition (~5s with -t 10)
+    sleep 6
+    if ssh root@$RPI 'grep -q "Timeout -> DIMMED" /tmp/tt.log 2>/dev/null'; then
+        pass "FULL -> DIMMED transition"
+    else
+        fail "FULL -> DIMMED transition not detected"
+    fi
+
+    # Wait for OFF transition (~10s total)
+    sleep 6
+    if ssh root@$RPI 'grep -q "Timeout -> OFF" /tmp/tt.log 2>/dev/null'; then
+        pass "DIMMED -> OFF transition"
+    else
+        fail "DIMMED -> OFF transition not detected"
+    fi
+
+    echo "[7/7] Testing SIGUSR1 wake signal..."
+
+    # Send wake signal
+    ssh root@$RPI 'pkill -USR1 -f touch-timeout'
+    sleep 1
+
+    if ssh root@$RPI 'grep -q "SIGUSR1 -> FULL" /tmp/tt.log 2>/dev/null'; then
+        pass "SIGUSR1 -> FULL wake"
+    else
+        fail "SIGUSR1 -> FULL wake not detected"
+    fi
+
+    # Cleanup
+    ssh root@$RPI 'pkill -f touch-timeout 2>/dev/null || true'
+    ssh root@$RPI 'rm -f /tmp/tt.log'
+    rm -f "$LOGFILE"
+else
+    echo "[6/7] Skipping on-device tests (RPI not set)"
+    echo "[7/7] Skipping SIGUSR1 test (RPI not set)"
 fi
 
 # ==================== SUMMARY ====================
