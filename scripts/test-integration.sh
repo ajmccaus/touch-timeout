@@ -1,31 +1,35 @@
 #!/bin/bash
 # Integration tests - validates deployment infrastructure and CLI behavior
 #
-# Run from project root: ./scripts/test-integration.sh
+# USAGE:
+#   ./scripts/test-integration.sh                    - Automated tests only
+#   RPI=<ip> ./scripts/test-integration.sh           - Include on-device tests
+#   RPI=<ip> RPI_USER=pi ./scripts/test-integration.sh  - Non-root user
+#
+# ENVIRONMENT VARIABLES:
+#   RPI=<ip>        - RPi IP address (enables on-device tests)
+#   RPI_USER=<user> - SSH user (default: root)
 #
 # AUTOMATED TESTS:
 #   - Script syntax validation
 #   - Documentation exists
 #   - Version consistency
 #   - CLI argument handling
+#   - State transitions (if RPI set): FULL->DIMMED->OFF via timeout
+#   - SIGUSR1 wake (if RPI set): OFF->FULL via signal
 #
-# ON-DEVICE TESTS (require real RPi with 7" touchscreen):
-#
-#   Prerequisites: export RPI=<ip-address>; make deploy-arm[32,64] RPI=$RPI
-#
-#   AUTOMATED (with RPI env var set):
-#     - State transitions (FULL->DIMMED->OFF via timeout)
-#     - SIGUSR1 wake (OFF->FULL via signal)
-#
-#   MANUAL ONLY:
-#     - Touch wake: ssh root@$RPI '/run/.../touch-timeout-*-arm* -t 10 -v'
-#                   Wait for OFF, touch screen, verify Touch->FULL in logs
-#     - Performance: ssh root@$RPI 'bash /run/.../test-performance.sh'
-#                    Targets: CPU ~0%, MEM <0.5MB, SD writes = 0, FD delta = 0
-#     - Install: ssh root@$RPI '/run/touch-timeout-staging/install.sh'
+# MANUAL TESTS (always required):
+#   - Touch wake: ssh $RPI_USER@$RPI '/run/.../touch-timeout-*-arm* -t 10 -v'
+#                 Wait for OFF, touch screen, verify Touch->FULL in logs
+#   - Performance: ssh $RPI_USER@$RPI 'bash /run/.../test-performance.sh'
+#                  Targets: CPU ~0%, MEM <0.5MB, SD writes = 0, FD delta = 0
+#   - Install: ssh $RPI_USER@$RPI '/run/touch-timeout-staging/install.sh'
 #
 
 set -e
+
+# Configuration (matches Makefile/deploy.sh pattern)
+RPI_USER="${RPI_USER:-root}"
 
 # Change to project root
 cd "$(dirname "$0")/.."
@@ -116,13 +120,13 @@ if [ -n "${RPI:-}" ]; then
 
     # Start daemon with short timeout and capture verbose output
     LOGFILE=$(mktemp)
-    ssh root@$RPI 'pkill -f touch-timeout 2>/dev/null || true'  # Clean slate
-    ssh root@$RPI 'nohup /run/touch-timeout-staging/touch-timeout-*-arm* -t 10 -v > /tmp/tt.log 2>&1 &'
+    ssh $RPI_USER@$RPI 'pkill -f touch-timeout 2>/dev/null || true'  # Clean slate
+    ssh $RPI_USER@$RPI 'nohup /run/touch-timeout-staging/touch-timeout-*-arm* -t 10 -v > /tmp/tt.log 2>&1 &'
     sleep 1  # Let daemon start
 
     # Wait for DIMMED transition (~5s with -t 10)
     sleep 6
-    if ssh root@$RPI 'grep -q "Timeout -> DIMMED" /tmp/tt.log 2>/dev/null'; then
+    if ssh $RPI_USER@$RPI 'grep -q "Timeout -> DIMMED" /tmp/tt.log 2>/dev/null'; then
         pass "FULL -> DIMMED transition"
     else
         fail "FULL -> DIMMED transition not detected"
@@ -130,7 +134,7 @@ if [ -n "${RPI:-}" ]; then
 
     # Wait for OFF transition (~10s total)
     sleep 6
-    if ssh root@$RPI 'grep -q "Timeout -> OFF" /tmp/tt.log 2>/dev/null'; then
+    if ssh $RPI_USER@$RPI 'grep -q "Timeout -> OFF" /tmp/tt.log 2>/dev/null'; then
         pass "DIMMED -> OFF transition"
     else
         fail "DIMMED -> OFF transition not detected"
@@ -139,18 +143,18 @@ if [ -n "${RPI:-}" ]; then
     echo "[7/7] Testing SIGUSR1 wake signal..."
 
     # Send wake signal
-    ssh root@$RPI 'pkill -USR1 -f touch-timeout'
+    ssh $RPI_USER@$RPI 'pkill -USR1 -f touch-timeout'
     sleep 1
 
-    if ssh root@$RPI 'grep -q "SIGUSR1 -> FULL" /tmp/tt.log 2>/dev/null'; then
+    if ssh $RPI_USER@$RPI 'grep -q "SIGUSR1 -> FULL" /tmp/tt.log 2>/dev/null'; then
         pass "SIGUSR1 -> FULL wake"
     else
         fail "SIGUSR1 -> FULL wake not detected"
     fi
 
     # Cleanup
-    ssh root@$RPI 'pkill -f touch-timeout 2>/dev/null || true'
-    ssh root@$RPI 'rm -f /tmp/tt.log'
+    ssh $RPI_USER@$RPI 'pkill -f touch-timeout 2>/dev/null || true'
+    ssh $RPI_USER@$RPI 'rm -f /tmp/tt.log'
     rm -f "$LOGFILE"
 else
     echo "[6/7] Skipping on-device tests (RPI not set)"
