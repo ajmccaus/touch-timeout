@@ -17,7 +17,7 @@ This experiment highlights the importance of expert verification of AI-assisted 
 
 **Hypothesis:** AI can accelerate development even for a non-expert developer.
 
-**Result:** Yes, but with significant caveats. Without proper context engineering, AI produces technical debt faster than a human could alone. AI-assisted development does not eliminate the need for domain expertise, at least to the point that successful delegation is possible. 
+**Result:** Yes, but with significant caveats. AI helped me level up my expertise faster, but did not replace the need for effective human delegation to AI and verification of the output. Without proper context engineering, AI produces technical debt faster than a human could alone. 
 
 ## Timeline
 
@@ -111,11 +111,15 @@ This experiment highlights the importance of expert verification of AI-assisted 
 
 ### 1. AI Amplifies Your Process
 
-If your process is "figure it out as you go," AI will help you figure it out faster—and create technical debt faster too.
+If your process is "figure it out as you go," AI can help you figure it out faster—and create technical debt faster too.
 
-If your process is "design first, then implement," AI will implement your design efficiently.
+If your process is "design first, then implement," AI can implement your design more efficiently.
 
-### 2. Context is Critical
+### 2. AI Accelerates Learning, Doesn't Replace It
+
+The hype suggests AI lets you skip expertise. Reality: you still need to develop expertise to guide AI and verify output—but AI compresses that timeline dramatically. This project went from idea to production-quality code in ~4 weeks. Traditional learning (forums, documentation, trial-and-error) would have taken months.
+
+### 3. Context is Critical
 
 **Bad context:**
 - "Here's messy code, make it better"
@@ -128,7 +132,7 @@ If your process is "design first, then implement," AI will implement your design
 - Design specification with interfaces
 - Implementation guide with patterns to follow
 
-### 3. AI Defaults to Over-Engineering
+### 4. AI Defaults to Over-Engineering
 
 Without constraints, Claude Code tends to produce:
 - More abstraction than necessary
@@ -138,14 +142,14 @@ Without constraints, Claude Code tends to produce:
 
 **Mitigation:** Explicitly state what NOT to build. List non-goals. Specify simplicity as a requirement.
 
-### 4. Documentation Doesn't Verify Itself
+### 5. Documentation Doesn't Verify Itself
 
 AI-generated documentation describes what the AI *intended* to build, not what it *actually* built. Always:
 - Verify documentation against code
 - Run the verification commands you document
 - Test the examples you provide
 
-### 5. Iteration Without Direction Compounds Debt
+### 6. Iteration Without Direction Compounds Debt
 
 Each AI-assisted iteration without clear direction adds complexity. After several cycles:
 - The codebase becomes harder to understand
@@ -183,7 +187,7 @@ For developers using AI assistance:
 
 3. **Verify documentation against code.** Run every command, test every example.
 
-4. **Prefer rewriting over iterating.** If the foundation is wrong, more AI iterations make it worse.
+4. **Prefer rewriting over iterating.** If the foundation is wrong, more AI iterations can make it worse.
 
 5. **Keep context clean.** Messy context produces messy output.
 
@@ -217,7 +221,7 @@ The v0.7.0 rewrite shows improved resource usage compared to the v0.4-0.6 codeba
 - SD writes = 0 ✓
 - FD delta = 0 ✓
 
-### Memory Measurement on Linux 5.x (December 2024)
+### Memory Measurement on Linux 5.x (December 2025)
 
 When measuring memory usage of the static binary on HifiBerryOS (Linux 5.15, Buildroot),
 we discovered a discrepancy between standard tools and actual memory consumption:

@@ -10,7 +10,9 @@ Lightweight touchscreen backlight manager for Raspberry Pi 7" displays. Automati
 ```bash
 git clone https://github.com/ajmccaus/touch-timeout.git
 cd touch-timeout
-make deploy-arm64 RPI=<IP_ADDRESS>
+# Choose based on your OS:
+make deploy-arm64 RPI=<IP_ADDRESS>  # 64-bit OS
+make deploy-arm32 RPI=<IP_ADDRESS>  # 32-bit OS
 ```
 
 This cross-compiles and deploys to your Raspberry Pi in one step. See [INSTALLATION.md](doc/INSTALLATION.md) for prerequisites and options.
@@ -99,9 +101,9 @@ This daemon manages **touchscreen timeout only**.
 
 ## About This Project
 
-This is a learning project and case study in non-expert AI-assisted software development. It chronicles what happens when you use AI to build software without proper design specifications—and the lessons learned from untangling the result.
+This project is a case study in AI-assisted development by someone learning software engineering. I used Claude as a "consultant" while learning the craft — and found that AI doesn't replace expertise, it accelerates acquiring it. Early versions were a working mess (v0.3) and an over-engineered refactor (v0.4) because I couldn't yet guide the AI or verify its output. Four weeks later, I'd learned enough to produce clean code (v0.7+). Traditional learning would have taken months.
 
-See [PROJECT-HISTORY.md](doc/PROJECT-HISTORY.md) for the full story.
+See [PROJECT-HISTORY.md](doc/PROJECT-HISTORY.md) for the full journey.
 
 **Support:**
 - Bug reports welcomed with reproduction steps
