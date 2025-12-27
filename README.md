@@ -44,7 +44,7 @@ make && sudo make install
 | **Touch detected** | Restores full brightness, resets idle timer |
 | **Idle 30s** | Dims to 10% brightness (minimum 10) |
 | **Idle 5 min** | Powers off display (brightness = 0) |
-| **SIGUSR1** | Wakes display (for shairport-sync integration) |
+| **SIGUSR1** | Wakes display (for external integration) |
 | **Systemd stop** | Restores brightness, graceful shutdown |
 
 ## Configuration

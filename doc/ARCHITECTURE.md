@@ -1,11 +1,22 @@
----
-version: "0.8"
-updated: 2025-12-21
----
-
 # Touch-Timeout Architecture
 
 Current implementation state. This document is descriptive (how it DOES work).
+
+## Functional Requirements
+1. Set initial brightness on startup
+2. Dim screen after configurable inactivity timeout
+3. Turn screen off after further inactivity timeout  
+4. Wake and restore brightness on touch event
+5. Wake on external signal (IPC from other programs)
+6. Restore brightness on graceful shutdown
+7. Integrate with systemd
+8. Support verbose mode for development/debugging
+
+## Other Requirements
+- Zero CPU when idle (blocking I/O only, no polling)
+- No SD card writes during normal operation (log to stderr/journal only)
+- Work with sensible defaults, no config file required
+- Minimal memory footprint, no steady-state dynamic allocation
 
 ## Module Structure
 
@@ -60,9 +71,9 @@ src/
 
 **state.h** - Pure state machine (caller provides time in seconds):
 - `state_init()` - Initialize with brightness and timeout values
-- `state_touch(now_sec)` - Handle touch, return new brightness or -1
-- `state_timeout(now_sec)` - Check timeout, return new brightness or -1
-- `state_get_timeout_sec(now_sec)` - Return seconds until next transition
+- `state_touch()` - Handle touch, return new brightness or -1
+- `state_timeout()` - Check timeout, return new brightness or -1
+- `state_get_timeout_sec()` - Return seconds until next transition
 - `state_get_brightness()` - Return brightness for current state
 - `state_get_current()` - Return current state enum
 
@@ -103,7 +114,6 @@ See `make help` or Makefile for available targets. Key flags: `-std=c99 -D_GNU_S
 
 - `Type=simple` - Compatible with minimal systems
 - `Restart=on-failure` - Auto-restart on crashes
-- `LogLevelMax=info` - Filter DEBUG messages
 
 **Optional features** (requires libsystemd at build time):
 - `sd_notify()` for startup confirmation
