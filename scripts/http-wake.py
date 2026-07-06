@@ -38,38 +38,46 @@ import sys
 class WakeHandler(BaseHTTPRequestHandler):
     """HTTP request handler that sends wake signal to touch-timeout"""
 
+    def _respond(self, code, body):
+        self.send_response(code)
+        self.send_header("Content-Type", "text/plain")
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_POST(self):
         """Handle POST request to /wake endpoint"""
-        if self.path == "/wake":
-            try:
-                subprocess.run(
-                    ["pkill", "-USR1", "touch-timeout"],
-                    check=True,
-                    capture_output=True
-                )
-                self.send_response(200)
-                self.send_header("Content-Type", "text/plain")
-                self.end_headers()
-                self.wfile.write(b"Display wake signal sent\n")
-            except subprocess.CalledProcessError as e:
-                self.send_response(500)
-                self.send_header("Content-Type", "text/plain")
-                self.end_headers()
-                error_msg = f"Error sending signal: {e}\n"
-                self.wfile.write(error_msg.encode())
+        if self.path != "/wake":
+            self._respond(404, b"Not found. Use POST /wake\n")
+            return
+
+        result = subprocess.run(
+            ["pkill", "-USR1", "touch-timeout"],
+            capture_output=True
+        )
+        if result.returncode == 0:
+            print(f"wake request from {self.client_address[0]}", file=sys.stderr)
+            self._respond(200, b"Display wake signal sent\n")
+        elif result.returncode == 1:
+            # pkill exit 1: no matching process
+            print("wake request failed: touch-timeout not running", file=sys.stderr)
+            self._respond(503, b"Wake daemon not available\n")
         else:
-            self.send_response(404)
-            self.send_header("Content-Type", "text/plain")
-            self.end_headers()
-            self.wfile.write(b"Not found. Use POST /wake\n")
+            # Log details server-side only; keep the client response generic
+            print(f"pkill failed (exit {result.returncode}): "
+                  f"{result.stderr.decode(errors='replace').strip()}", file=sys.stderr)
+            self._respond(500, b"Failed to send wake signal\n")
 
     def log_message(self, format, *args):
-        """Suppress HTTP access logs to reduce journal noise"""
+        """Suppress per-request HTTP access logs to reduce journal noise.
+        Wake attempts and failures are logged explicitly in do_POST."""
         pass
 
 
 if __name__ == "__main__":
     try:
+        # SECURITY: bind to localhost only. Changing this to "0.0.0.0" would
+        # let any host on the network signal the daemon unauthenticated.
+        # Container integrations should use host networking (see header notes).
         server = HTTPServer(("127.0.0.1", 8765), WakeHandler)
         print("touch-timeout HTTP wake endpoint listening on 127.0.0.1:8765",
               file=sys.stderr)

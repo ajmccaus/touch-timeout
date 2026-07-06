@@ -6,13 +6,15 @@
  *   Owns: CLI parsing, device discovery, sysfs/input I/O, event loop, signals.
  *
  * DESIGN CONSTRAINTS:
- *   - Zero CPU when idle: Uses blocking poll() with timeout from state machine
+ *   - Zero CPU when idle: Uses blocking ppoll() with timeout from state machine
  *   - Zero writes when idle: Caches brightness to avoid redundant sysfs writes
  *   - No dynamic allocation: Fixed buffers with compile-time bounds checking
  *   - Monotonic time only: CLOCK_MONOTONIC for wraparound-safe timeouts
+ *   - No lost signals: SIGTERM/SIGINT/SIGUSR1 blocked outside ppoll(), so
+ *     signals are only delivered while waiting and always interrupt the wait
  *
  * EVENT LOOP DESIGN:
- *   1. poll() blocks on /dev/input/eventX with timeout from state_get_timeout_sec()
+ *   1. ppoll() blocks on /dev/input/eventX with timeout from state_get_timeout_sec()
  *   2. On POLLIN: drain_touch_events() → state_touch() → set_brightness() if changed
  *   3. On timeout: state_timeout() → set_brightness() if changed
  *   4. On SIGUSR1: state_touch() to wake display (external integration)
@@ -513,9 +515,15 @@ static void handle_signal(int sig) {
 
 /*
  * Register signal handlers for graceful shutdown and external wake.
+ *
+ * Blocks SIGTERM/SIGINT/SIGUSR1 outside of ppoll(): signals are only
+ * delivered while the event loop waits, so every signal interrupts
+ * ppoll() with EINTR and none can be lost between poll cycles.
+ * The pre-block mask is written to poll_mask for use with ppoll().
+ *
  * Returns 0 on success, -1 on failure.
  */
-static int setup_signals(void) {
+static int setup_signals(sigset_t *poll_mask) {
     struct sigaction sa = {0};
     sa.sa_handler = handle_signal;
     sigemptyset(&sa.sa_mask);
@@ -528,6 +536,16 @@ static int setup_signals(void) {
     }
 
     signal(SIGPIPE, SIG_IGN);
+
+    sigset_t block;
+    sigemptyset(&block);
+    sigaddset(&block, SIGTERM);
+    sigaddset(&block, SIGINT);
+    sigaddset(&block, SIGUSR1);
+    if (sigprocmask(SIG_BLOCK, &block, poll_mask) < 0) {
+        log_err("sigprocmask failed: %s", strerror(errno));
+        return -1;
+    }
     return 0;
 }
 
@@ -599,7 +617,8 @@ int main(int argc, char *argv[]) {
     }
 
     /* Register signal handlers */
-    if (setup_signals() < 0)
+    sigset_t poll_mask;
+    if (setup_signals(&poll_mask) < 0)
         goto cleanup_all;
 
     /* Daemon ready */
@@ -616,9 +635,16 @@ int main(int argc, char *argv[]) {
     while (g_running) {
         uint32_t now = now_sec();
         int timeout_sec = state_get_timeout_sec(&state, now);
-        int timeout_ms = (timeout_sec < 0) ? -1 : timeout_sec * 1000;
+        struct timespec poll_timeout;
+        struct timespec *timeout_p = NULL;
+        if (timeout_sec >= 0) {
+            poll_timeout.tv_sec = timeout_sec;
+            poll_timeout.tv_nsec = 0;
+            timeout_p = &poll_timeout;
+        }
 
-        int ret = poll(&pfd, 1, timeout_ms);
+        /* ppoll atomically unblocks signals while waiting (see setup_signals) */
+        int ret = ppoll(&pfd, 1, timeout_p, &poll_mask);
 
         if (ret < 0) {
             if (errno == EINTR) {

@@ -25,6 +25,35 @@ See [PROJECT-HISTORY.md](doc/PROJECT-HISTORY.md) for the full case study.
 
 ---
 
+## [Unreleased]
+
+Security hardening and event-loop modernization (from public-repo security review).
+
+### Fixed
+
+- **Lost SIGUSR1 wake race**: Signals arriving while the event loop was
+  processing (not blocked in poll) were deferred until the next timeout.
+  Now SIGTERM/SIGINT/SIGUSR1 are blocked outside the wait and delivered
+  atomically via `ppoll()`, so external wakes are never delayed.
+
+### Changed
+
+- **http-wake.py**: Generic client-facing error responses (no internal
+  details leaked); real errors and wake requests logged to the journal;
+  distinct 503 response when the touch-timeout daemon is not running
+- **http-wake.service**: Now runs as an unprivileged dynamic user with
+  only CAP_KILL, plus full systemd sandboxing (ProtectSystem=strict,
+  PrivateTmp, PrivateDevices, syscall filter); Restart=on-failure with
+  start-rate limiting
+- **touch-timeout.service**: Additional defense-in-depth directives
+  (ProtectHome, ProtectKernelTunables/Modules, RestrictAddressFamilies,
+  MemoryDenyWriteExecute, SystemCallFilter=@system-service)
+- **Build**: `-std=c11` (makes existing `_Static_assert` standard),
+  hardened flags (`-fstack-protector-strong`, `-D_FORTIFY_SOURCE=2`,
+  `-Wformat=2`) shared across native and cross builds
+
+---
+
 ## [0.8.0] - 2025-12-21
 
 Device auto-detection and documentation improvements.

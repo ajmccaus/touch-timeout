@@ -23,10 +23,23 @@ TimeoutStartSec=10s
 TimeoutStopSec=5s
 
 # Security hardening
+# Older systemd versions (e.g. HifiBerryOS/Buildroot) ignore unknown
+# directives with a warning; the service still starts.
 ProtectSystem=full
+ProtectHome=yes
 PrivateTmp=true
 NoNewPrivileges=true
 ReadWritePaths=/sys/class/backlight
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
 
 LimitNOFILE=64
 
