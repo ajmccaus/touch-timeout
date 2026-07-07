@@ -60,7 +60,13 @@ VERSION_PATCH = 0
 VERSION = $(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_PATCH)
 
 CC = gcc
-CFLAGS = -O2 -Wall -Wextra -Wno-unused-parameter -std=c99 -D_GNU_SOURCE -Iinclude
+# Base flags shared by native and cross builds.
+# Hardening: stack protector + FORTIFY (glibc bounds checks on str/mem calls).
+# -U_FORTIFY_SOURCE first: some toolchains (Ubuntu) predefine it.
+BASE_CFLAGS = -O2 -Wall -Wextra -Wformat=2 -Wno-unused-parameter -std=c11 \
+              -D_GNU_SOURCE -Iinclude \
+              -fstack-protector-strong -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2
+CFLAGS = $(BASE_CFLAGS)
 LDFLAGS =
 BUILD_DIR = build
 TARGET = $(BUILD_DIR)/touch-timeout-$(VERSION)-native
@@ -124,11 +130,11 @@ help:
 # Cross-compilation targets for ARM
 arm32: version $(BUILD_DIR)
 	$(MAKE) clean-objs
-	$(MAKE) CC=arm-linux-gnueabihf-gcc CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -std=c99 -D_GNU_SOURCE -Iinclude -march=armv7-a -mfpu=neon" LDFLAGS=-static TARGET=$(BUILD_DIR)/touch-timeout-$(VERSION)-arm32 all
+	$(MAKE) CC=arm-linux-gnueabihf-gcc CFLAGS="$(BASE_CFLAGS) -march=armv7-a -mfpu=neon" LDFLAGS=-static TARGET=$(BUILD_DIR)/touch-timeout-$(VERSION)-arm32 all
 
 arm64: version $(BUILD_DIR)
 	$(MAKE) clean-objs
-	$(MAKE) CC=aarch64-linux-gnu-gcc CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -std=c99 -D_GNU_SOURCE -Iinclude -march=armv8-a" LDFLAGS=-static TARGET=$(BUILD_DIR)/touch-timeout-$(VERSION)-arm64 all
+	$(MAKE) CC=aarch64-linux-gnu-gcc CFLAGS="$(BASE_CFLAGS) -march=armv8-a" LDFLAGS=-static TARGET=$(BUILD_DIR)/touch-timeout-$(VERSION)-arm64 all
 
 # Deploy targets (require RPI=<ip>)
 deploy-arm32:
