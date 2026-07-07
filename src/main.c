@@ -645,24 +645,28 @@ int main(int argc, char *argv[]) {
 
         /* ppoll atomically unblocks signals while waiting (see setup_signals) */
         int ret = ppoll(&pfd, 1, timeout_p, &poll_mask);
+        int poll_errno = errno;
+
+        /*
+         * Handle external wake (SIGUSR1) on every return path: a caught
+         * signal may coincide with a ready fd, in which case ppoll()
+         * returns the fd count rather than EINTR.
+         */
+        if (g_wake_requested) {
+            g_wake_requested = 0;
+            int wake_bright = state_touch(&state, now_sec());
+            if (wake_bright >= 0 && wake_bright != cached_brightness) {
+                if (set_brightness(bl_fd, wake_bright) == 0) {
+                    cached_brightness = wake_bright;
+                    log_verbose("SIGUSR1 -> FULL (brightness %d)", wake_bright);
+                }
+            }
+        }
 
         if (ret < 0) {
-            if (errno == EINTR) {
-                /* Handle external wake signal (SIGUSR1) */
-                if (g_wake_requested) {
-                    g_wake_requested = 0;
-                    now = now_sec();
-                    int new_bright = state_touch(&state, now);
-                    if (new_bright >= 0 && new_bright != cached_brightness) {
-                        if (set_brightness(bl_fd, new_bright) == 0) {
-                            cached_brightness = new_bright;
-                            log_verbose("SIGUSR1 -> FULL (brightness %d)", new_bright);
-                        }
-                    }
-                }
+            if (poll_errno == EINTR)
                 continue;
-            }
-            log_err("poll() failed: %s", strerror(errno));
+            log_err("poll() failed: %s", strerror(poll_errno));
             break;
         }
 

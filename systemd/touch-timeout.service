@@ -30,7 +30,9 @@ ProtectHome=yes
 PrivateTmp=true
 NoNewPrivileges=true
 ReadWritePaths=/sys/class/backlight
-ProtectKernelTunables=yes
+# ProtectKernelTunables is deliberately NOT set: it mounts /sys read-only,
+# and /sys/class/backlight entries are symlinks into /sys/devices/..., so
+# brightness writes would fail with EROFS despite ReadWritePaths above.
 ProtectKernelModules=yes
 ProtectControlGroups=yes
 RestrictAddressFamilies=AF_UNIX
