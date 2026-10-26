@@ -3,12 +3,41 @@ Description=Touch Timeout HTTP Wake Endpoint
 Documentation=https://github.com/ajmccaus/touch-timeout
 After=network.target touch-timeout.service
 Requires=touch-timeout.service
+StartLimitIntervalSec=60
+StartLimitBurst=3
 
 [Service]
 Type=simple
 ExecStart=/usr/bin/http-wake
-Restart=always
+Restart=on-failure
 RestartSec=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+# Security hardening
+# Runs as an unprivileged dynamic user. CAP_KILL is required so pkill can
+# deliver SIGUSR1 to the root-owned touch-timeout daemon.
+# Older systemd versions (e.g. HifiBerryOS/Buildroot) ignore unknown
+# directives with a warning; the service still starts.
+DynamicUser=yes
+AmbientCapabilities=CAP_KILL
+CapabilityBoundingSet=CAP_KILL
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
 
 [Install]
 WantedBy=multi-user.target

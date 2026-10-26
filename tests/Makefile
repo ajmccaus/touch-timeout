@@ -3,7 +3,7 @@
 # Tests pure modules (state machine, main.c calculations) with coverage
 
 CC = gcc
-CFLAGS = -Wall -Wextra -std=c99 -D_GNU_SOURCE -I../src -I../include -DUNIT_TEST
+CFLAGS = -Wall -Wextra -std=c11 -D_GNU_SOURCE -I../src -I../include -DUNIT_TEST
 COVERAGE_CFLAGS = --coverage -fprofile-arcs -ftest-coverage -g
 LDFLAGS = --coverage
 

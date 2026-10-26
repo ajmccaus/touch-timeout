@@ -81,7 +81,7 @@ src/
 
 The main loop uses blocking I/O for zero CPU idle:
 
-1. **Wait**: poll() blocks on input fd with timeout from state machine
+1. **Wait**: ppoll() blocks on input fd with timeout from state machine
 2. **Touch event**: Drain events, notify state machine, apply brightness if changed
 3. **Timeout**: Notify state machine, apply brightness if changed
 4. **Signal**: SIGUSR1 wakes display; SIGTERM/SIGINT trigger graceful shutdown
@@ -89,7 +89,9 @@ The main loop uses blocking I/O for zero CPU idle:
 Loop exits when `g_running` becomes false (signal received).
 
 **Key design choices:**
-- Single `poll()` with timeout (no timerfd)
+- Single `ppoll()` with timeout (no timerfd)
+- Signals blocked outside `ppoll()` — delivered atomically during the wait,
+  so a SIGUSR1 arriving mid-loop can never be lost or delayed
 - Pure state machine - caller owns time via `CLOCK_MONOTONIC`
 - Brightness caching - avoid redundant sysfs writes
 - SIGUSR1 wake support for external integration
